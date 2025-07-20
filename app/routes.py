@@ -653,6 +653,7 @@ def upload_excel():
                         print(f'第 {index+1} 行數據不完整，跳過')
                         continue
                     
+                    # 查詢現有員工
                     employee = Employee.query.filter_by(name=employee_name).first()
                     if not employee:
                         # 生成唯一的員工代碼
