@@ -653,9 +653,9 @@ def upload_excel():
                         print(f'第 {index+1} 行數據不完整，跳過')
                         continue
                     
-                    # 查詢現有員工
-                    employee = Employee.query.filter_by(name=employee_name).first()
-                    if not employee:
+                    # 查詢現有員工記錄
+                    existing_employee = Employee.query.filter_by(name=employee_name).first()
+                    if not existing_employee:
                         # 生成唯一的員工代碼
                         existing_count = Employee.query.count()
                         employee_code = f"EMP_{existing_count+1:03d}"
@@ -665,17 +665,22 @@ def upload_excel():
                             existing_count += 1
                             employee_code = f"EMP_{existing_count+1:03d}"
                         
-                        employee = Employee(name=employee_name, employee_code=employee_code)
-                        db.session.add(employee)
+                        new_employee = Employee(name=employee_name, employee_code=employee_code)
+                        db.session.add(new_employee)
                         # 立即提交以避免重複代碼問題
                         try:
                             db.session.commit()
                         except Exception as e:
                             db.session.rollback()
                             # 如果還是失敗，可能是姓名重複，使用現有員工
-                            employee = Employee.query.filter_by(name=employee_name).first()
-                            if not employee:
+                            existing_employee = Employee.query.filter_by(name=employee_name).first()
+                            if not existing_employee:
                                 raise e
+                    else:
+                        new_employee = existing_employee
+                    
+                    # 統一使用 employee 變數
+                    employee = new_employee if 'new_employee' in locals() else existing_employee
                     
                     shift_type = ShiftType.query.filter_by(code=shift_code).first()
                     if not shift_type:
