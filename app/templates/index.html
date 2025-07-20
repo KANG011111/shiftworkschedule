@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block title %}首頁 - 班表管理系統{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 col-md-12">
+        <h2 class="mb-3">
+            <i class="fas fa-calendar-day d-md-none"></i>
+            今日排班 
+            <small class="text-muted d-block d-md-inline">{{ today.strftime('%Y年%m月%d日') }}</small>
+        </h2>
+        {% if today_schedules %}
+            <div class="row">
+                {% for schedule in today_schedules %}
+                <div class="col-lg-6 col-md-6 col-sm-12 mb-3">
+                    <div class="card h-100" style="border-left: 4px solid {{ schedule.shift_type.color }}">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ schedule.employee.name }}</h5>
+                            <p class="card-text">
+                                <span class="badge mb-2" style="background-color: {{ schedule.shift_type.color }}">
+                                    {{ schedule.shift_type.code }}
+                                </span>
+                                <br>
+                                <small class="text-muted">
+                                    <i class="fas fa-clock"></i>
+                                    {{ schedule.shift_type.start_time.strftime('%H:%M') }} - 
+                                    {{ schedule.shift_type.end_time.strftime('%H:%M') }}
+                                </small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i> 今日沒有排班資料
+            </div>
+        {% endif %}
+    </div>
+    
+    <div class="col-lg-4 col-md-12 mt-3 mt-lg-0">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-search"></i> 快速查詢</h5>
+            </div>
+            <div class="card-body">
+                <form class="mb-3">
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="quickSearch" 
+                               placeholder="輸入員工姓名...">
+                        <button class="btn btn-outline-primary" type="button" onclick="searchEmployee()">
+                            <i class="fas fa-search"></i>
+                            <span class="d-none d-md-inline ms-1">搜尋</span>
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="d-grid gap-2">
+                    <a href="{{ url_for('main.calendar') }}" class="btn btn-primary">
+                        <i class="fas fa-calendar me-2"></i>查看完整日曆
+                    </a>
+                    <a href="{{ url_for('main.query_shift') }}" class="btn btn-secondary">
+                        <i class="fas fa-search me-2"></i>查詢特定日期
+                    </a>
+                    <a href="{{ url_for('main.search') }}" class="btn btn-info">
+                        <i class="fas fa-filter me-2"></i>進階搜尋
+                    </a>
+                    <a href="{{ url_for('main.upload_excel') }}" class="btn btn-success" id="uploadExcelBtn" style="display: none;">
+                        <i class="fas fa-upload me-2"></i>匯入 Excel 班表
+                    </a>
+                    <a href="{{ url_for('main.export_schedule') }}" class="btn btn-warning">
+                        <i class="fas fa-download me-2"></i>匯出個人班表
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>班別說明</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #007bff">FC班</span>
+                    <small class="text-muted ms-2">一般班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #28a745">P1班</span>
+                    <small class="text-muted ms-2">演出班早班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #ffc107; color: #000">P2班</span>
+                    <small class="text-muted ms-2">演出班中班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #fd7e14">P3班</span>
+                    <small class="text-muted ms-2">演出班晚班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #dc3545">P4班</span>
+                    <small class="text-muted ms-2">演出班夜班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #6c757d">休假</span>
+                    <small class="text-muted ms-2">H0/H1/H2</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function searchEmployee() {
+    const searchTerm = document.getElementById('quickSearch').value.trim();
+    if (searchTerm) {
+        window.location.href = '/search?employee=' + encodeURIComponent(searchTerm);
+    }
+}
+
+// 支援 Enter 鍵搜尋
+document.getElementById('quickSearch').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        searchEmployee();
+    }
+});
+
+// 根據用戶角色顯示/隱藏功能按鈕
+function updateHomepageButtons() {
+    const uploadExcelBtn = document.getElementById('uploadExcelBtn');
+    
+    // 等待全域認證狀態載入
+    setTimeout(() => {
+        if (window.isAdmin && window.isAdmin()) {
+            uploadExcelBtn.style.display = 'inline-block';
+        } else {
+            uploadExcelBtn.style.display = 'none';
+        }
+    }, 100);
+}
+
+// 頁面載入時檢查權限
+document.addEventListener('DOMContentLoaded', function() {
+    updateHomepageButtons();
+    
+    // 監聽認證狀態變化
+    const originalUpdateNavigation = window.updateNavigation;
+    if (originalUpdateNavigation) {
+        window.updateNavigation = function(...args) {
+            originalUpdateNavigation.apply(this, args);
+            updateHomepageButtons();
+        };
+    }
+});
+</script>
+{% endblock %}

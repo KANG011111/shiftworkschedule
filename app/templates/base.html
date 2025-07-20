@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}班表管理系統{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* RWD 優化 */
+        @media (max-width: 768px) {
+            .container {
+                padding-left: 15px;
+                padding-right: 15px;
+            }
+            
+            /* 卡片在手機上的優化 */
+            .card {
+                margin-bottom: 1rem;
+            }
+            
+            /* 表格響應式優化 */
+            .table-responsive {
+                font-size: 0.9rem;
+            }
+            
+            /* 按鈕在手機上的優化 */
+            .btn {
+                margin-bottom: 0.5rem;
+            }
+            
+            /* 班別標籤在手機上更大 */
+            .badge {
+                font-size: 0.8rem;
+                padding: 0.5em 0.8em;
+            }
+            
+            /* 日期輸入框在手機上的優化 */
+            input[type="date"] {
+                font-size: 16px; /* 防止iOS縮放 */
+            }
+            
+            /* FullCalendar 手機優化 */
+            .fc-toolbar {
+                flex-direction: column;
+            }
+            
+            .fc-toolbar-chunk {
+                margin: 0.2em 0;
+            }
+            
+            /* 搜尋結果卡片優化 */
+            .accordion-button {
+                font-size: 0.9rem;
+                padding: 0.75rem;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            /* 更小螢幕的優化 */
+            .container {
+                padding-left: 10px;
+                padding-right: 10px;
+            }
+            
+            h1, h2 {
+                font-size: 1.5rem;
+            }
+            
+            h3, h4, h5 {
+                font-size: 1.2rem;
+            }
+            
+            /* 快速查詢按鈕在小螢幕上堆疊 */
+            .d-grid .btn {
+                margin-bottom: 0.5rem;
+            }
+        }
+        
+        /* 手機橫向模式優化 */
+        @media (max-width: 896px) and (orientation: landscape) {
+            .navbar-brand span {
+                font-size: 0.9rem;
+            }
+        }
+        
+        /* 通用手機優化 */
+        @media (max-width: 768px) {
+            /* 觸摸友好的按鈕大小 */
+            .btn {
+                min-height: 44px;
+                font-size: 1rem;
+            }
+            
+            /* 表單輸入框觸摸優化 */
+            .form-control, .form-select {
+                min-height: 44px;
+                font-size: 16px; /* 防止iOS縮放 */
+            }
+            
+            /* 卡片間距優化 */
+            .card + .card {
+                margin-top: 1rem;
+            }
+            
+            /* 模態窗手機優化 */
+            .modal-dialog {
+                margin: 0.5rem;
+            }
+            
+            /* 下拉選單手機優化 */
+            .dropdown-menu {
+                font-size: 1rem;
+            }
+            
+            /* Badge 在手機上更大更易點擊 */
+            .badge {
+                font-size: 0.875rem;
+                padding: 0.5rem 0.75rem;
+            }
+            
+            /* 手機專用隱藏類別 */
+            .d-mobile-none {
+                display: none !important;
+            }
+        }
+        
+        /* 改善可讀性 */
+        body {
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        
+        /* 改善觸摸目標 */
+        .nav-link, .btn, .badge {
+            cursor: pointer;
+        }
+        
+        /* 載入動畫優化 */
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('main.index') }}">
+                <span class="d-none d-md-inline">班表管理系統</span>
+                <span class="d-md-none">班表</span>
+            </a>
+            
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" 
+                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.index') }}">
+                            <i class="fas fa-home d-lg-none"></i>
+                            <span class="d-none d-lg-inline">首頁</span>
+                            <span class="d-lg-none">首頁</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.calendar') }}">
+                            <i class="fas fa-calendar d-lg-none"></i>
+                            <span class="d-none d-lg-inline">日曆檢視</span>
+                            <span class="d-lg-none">日曆</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.query_shift') }}">
+                            <i class="fas fa-search d-lg-none"></i>
+                            <span class="d-none d-lg-inline">查詢排班</span>
+                            <span class="d-lg-none">查詢</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.search') }}">
+                            <i class="fas fa-filter d-lg-none"></i>
+                            <span class="d-none d-lg-inline">進階搜尋</span>
+                            <span class="d-lg-none">搜尋</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" id="uploadExcelLink" style="display: none;">
+                        <a class="nav-link" href="{{ url_for('main.upload_excel') }}">
+                            <i class="fas fa-upload d-lg-none"></i>
+                            <span class="d-none d-lg-inline">匯入Excel</span>
+                            <span class="d-lg-none">匯入</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('main.export_schedule') }}">
+                            <i class="fas fa-download d-lg-none"></i>
+                            <span class="d-none d-lg-inline">匯出班表</span>
+                            <span class="d-lg-none">匯出</span>
+                        </a>
+                    </li>
+                </ul>
+                
+                <ul class="navbar-nav">
+                    <!-- 用戶登入狀態顯示 -->
+                    <li class="nav-item dropdown" id="userDropdown" style="display: none;">
+                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user"></i>
+                            <span id="userName"></span>
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><span class="dropdown-item-text">
+                                <small class="text-muted">登入身份：</small><br>
+                                <span id="userRole"></span>
+                            </span></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li id="adminLink" style="display: none;">
+                                <a class="dropdown-item" href="{{ url_for('main.admin_page') }}">
+                                    <i class="fas fa-cogs me-2"></i>管理員控制台
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" onclick="logout()">
+                                    <i class="fas fa-sign-out-alt me-2"></i>登出
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    
+                    <!-- 未登入時顯示 -->
+                    <li class="nav-item" id="loginLink">
+                        <a class="nav-link" href="{{ url_for('auth.login_page') }}">
+                            <i class="fas fa-sign-in-alt d-lg-none"></i>
+                            <span class="d-none d-lg-inline">登入</span>
+                            <span class="d-lg-none">登入</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" id="registerLink">
+                        <a class="nav-link" href="{{ url_for('auth.register_page') }}">
+                            <i class="fas fa-user-plus d-lg-none"></i>
+                            <span class="d-none d-lg-inline">註冊</span>
+                            <span class="d-lg-none">註冊</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid container-lg mt-4">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+    
+    <script>
+        // 全域認證狀態管理
+        let currentUser = null;
+        
+        // 檢查登入狀態
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        currentUser = data.data.user;
+                        updateNavigation(true);
+                        return true;
+                    }
+                }
+            } catch (error) {
+                console.error('檢查認證狀態錯誤:', error);
+            }
+            
+            currentUser = null;
+            updateNavigation(false);
+            return false;
+        }
+        
+        // 更新導航列
+        function updateNavigation(isLoggedIn) {
+            const userDropdown = document.getElementById('userDropdown');
+            const loginLink = document.getElementById('loginLink');
+            const registerLink = document.getElementById('registerLink');
+            const userName = document.getElementById('userName');
+            const userRole = document.getElementById('userRole');
+            const adminLink = document.getElementById('adminLink');
+            const uploadExcelLink = document.getElementById('uploadExcelLink');
+            
+            if (isLoggedIn && currentUser) {
+                // 顯示用戶信息
+                userDropdown.style.display = 'block';
+                loginLink.style.display = 'none';
+                registerLink.style.display = 'none';
+                
+                userName.textContent = currentUser.name;
+                
+                // 根據角色顯示不同信息
+                if (currentUser.role === 'admin') {
+                    userRole.textContent = '管理員';
+                    adminLink.style.display = 'block';
+                    uploadExcelLink.style.display = 'block'; // 只有管理員可以看到匯入Excel
+                } else {
+                    userRole.textContent = '一般用戶';
+                    adminLink.style.display = 'none';
+                    uploadExcelLink.style.display = 'none'; // 一般用戶隱藏匯入Excel
+                }
+            } else {
+                // 未登入時隱藏所有需要權限的功能
+                userDropdown.style.display = 'none';
+                loginLink.style.display = 'block';
+                registerLink.style.display = 'block';
+                uploadExcelLink.style.display = 'none'; // 未登入隱藏匯入Excel
+            }
+        }
+        
+        // 登出功能
+        async function logout() {
+            try {
+                const response = await fetch('/api/auth/logout', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentUser = null;
+                    updateNavigation(false);
+                    
+                    // 如果當前在需要認證的頁面，重定向到登入頁面
+                    if (window.location.pathname === '/admin') {
+                        window.location.href = '/login';
+                    } else {
+                        // 重新載入頁面以清除任何用戶相關的內容
+                        window.location.reload();
+                    }
+                } else {
+                    alert('登出失敗');
+                }
+            } catch (error) {
+                console.error('登出錯誤:', error);
+                alert('登出失敗');
+            }
+        }
+        
+        // 頁面載入時檢查認證狀態
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthStatus();
+        });
+        
+        // 全域函數供其他頁面使用
+        window.getCurrentUser = function() {
+            return currentUser;
+        };
+        
+        window.isLoggedIn = function() {
+            return currentUser !== null;
+        };
+        
+        window.isAdmin = function() {
+            return currentUser && currentUser.role === 'admin';
+        };
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

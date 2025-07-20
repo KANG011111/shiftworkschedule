@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>註冊 - 班表查詢系統</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 20px 0;
+        }
+        
+        .register-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
+            margin: 20px;
+        }
+        
+        .register-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .register-header h1 {
+            color: #333;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .register-header p {
+            color: #666;
+            margin: 0;
+        }
+        
+        .form-control {
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            padding: 12px 15px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        
+        .btn-register {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            width: 100%;
+            margin-top: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-register:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+            color: white;
+        }
+        
+        .btn-register:disabled {
+            opacity: 0.6;
+            transform: none;
+        }
+        
+        .login-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .login-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .login-link a:hover {
+            color: #764ba2;
+            text-decoration: underline;
+        }
+        
+        .alert {
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-group-text {
+            background: transparent;
+            border: 2px solid #e1e5e9;
+            border-right: none;
+            border-radius: 10px 0 0 10px;
+        }
+        
+        .input-group .form-control {
+            border-left: none;
+            border-radius: 0 10px 10px 0;
+        }
+        
+        .input-group:focus-within .input-group-text {
+            border-color: #667eea;
+        }
+        
+        .password-strength {
+            margin-top: 5px;
+            font-size: 12px;
+        }
+        
+        .strength-weak { color: #dc3545; }
+        .strength-medium { color: #ffc107; }
+        .strength-strong { color: #28a745; }
+        
+        .form-text {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 576px) {
+            .register-container {
+                padding: 30px 20px;
+                margin: 10px;
+            }
+            
+            .register-header h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <div class="register-header">
+            <h1><i class="fas fa-user-plus"></i> 註冊帳號</h1>
+            <p>建立您的班表查詢帳號</p>
+        </div>
+        
+        <div id="alertContainer"></div>
+        
+        <form id="registerForm">
+            <div class="input-group">
+                <span class="input-group-text">
+                    <i class="fas fa-user"></i>
+                </span>
+                <input type="text" class="form-control" id="username" name="username" 
+                       placeholder="帳號" required autocomplete="username">
+            </div>
+            <div class="form-text">帳號需3-50個字符，只能包含字母、數字和下劃線</div>
+            
+            <div class="input-group">
+                <span class="input-group-text">
+                    <i class="fas fa-id-card"></i>
+                </span>
+                <input type="text" class="form-control" id="name" name="name" 
+                       placeholder="真實姓名" required autocomplete="name">
+            </div>
+            
+            <div class="input-group">
+                <span class="input-group-text">
+                    <i class="fas fa-lock"></i>
+                </span>
+                <input type="password" class="form-control" id="password" name="password" 
+                       placeholder="密碼" required autocomplete="new-password">
+            </div>
+            <div id="passwordStrength" class="password-strength"></div>
+            <div class="form-text">密碼至少8位，建議包含大小寫字母和數字</div>
+            
+            <div class="input-group">
+                <span class="input-group-text">
+                    <i class="fas fa-lock"></i>
+                </span>
+                <input type="password" class="form-control" id="confirmPassword" name="confirmPassword" 
+                       placeholder="確認密碼" required autocomplete="new-password">
+            </div>
+            <div id="passwordMatch" class="form-text"></div>
+            
+            <button type="submit" class="btn btn-register" id="registerBtn">
+                <span id="registerBtnText">
+                    <i class="fas fa-user-plus me-2"></i>註冊
+                </span>
+                <span id="registerBtnSpinner" style="display: none;">
+                    <i class="fas fa-spinner fa-spin me-2"></i>註冊中...
+                </span>
+            </button>
+        </form>
+        
+        <div class="login-link">
+            <a href="/login">已有帳號？立即登入</a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function showAlert(message, type = 'danger') {
+            const alertContainer = document.getElementById('alertContainer');
+            alertContainer.innerHTML = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `;
+        }
+        
+        function setLoading(loading) {
+            const registerBtn = document.getElementById('registerBtn');
+            const registerBtnText = document.getElementById('registerBtnText');
+            const registerBtnSpinner = document.getElementById('registerBtnSpinner');
+            
+            if (loading) {
+                registerBtn.disabled = true;
+                registerBtnText.style.display = 'none';
+                registerBtnSpinner.style.display = 'inline';
+            } else {
+                registerBtn.disabled = false;
+                registerBtnText.style.display = 'inline';
+                registerBtnSpinner.style.display = 'none';
+            }
+        }
+        
+        function checkPasswordStrength(password) {
+            const strengthDiv = document.getElementById('passwordStrength');
+            
+            if (password.length === 0) {
+                strengthDiv.innerHTML = '';
+                return;
+            }
+            
+            let score = 0;
+            if (password.length >= 8) score++;
+            if (/[a-z]/.test(password)) score++;
+            if (/[A-Z]/.test(password)) score++;
+            if (/\d/.test(password)) score++;
+            if (/[^a-zA-Z0-9]/.test(password)) score++;
+            
+            let strength, className;
+            if (score <= 2) {
+                strength = '弱';
+                className = 'strength-weak';
+            } else if (score <= 3) {
+                strength = '中等';
+                className = 'strength-medium';
+            } else {
+                strength = '強';
+                className = 'strength-strong';
+            }
+            
+            strengthDiv.innerHTML = `密碼強度: <span class="${className}">${strength}</span>`;
+        }
+        
+        function checkPasswordMatch() {
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const matchDiv = document.getElementById('passwordMatch');
+            
+            if (confirmPassword.length === 0) {
+                matchDiv.innerHTML = '';
+                return true;
+            }
+            
+            if (password === confirmPassword) {
+                matchDiv.innerHTML = '<span style="color: #28a745;"><i class="fas fa-check"></i> 密碼匹配</span>';
+                return true;
+            } else {
+                matchDiv.innerHTML = '<span style="color: #dc3545;"><i class="fas fa-times"></i> 密碼不匹配</span>';
+                return false;
+            }
+        }
+        
+        // 密碼強度檢查
+        document.getElementById('password').addEventListener('input', function() {
+            checkPasswordStrength(this.value);
+            checkPasswordMatch();
+        });
+        
+        // 密碼匹配檢查
+        document.getElementById('confirmPassword').addEventListener('input', checkPasswordMatch);
+        
+        document.getElementById('registerForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const name = document.getElementById('name').value.trim();
+            const password = document.getElementById('password').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            
+            if (!username || !name || !password || !confirmPassword) {
+                showAlert('請填寫所有欄位');
+                return;
+            }
+            
+            if (password !== confirmPassword) {
+                showAlert('密碼與確認密碼不一致');
+                return;
+            }
+            
+            if (password.length < 8) {
+                showAlert('密碼至少需要8個字符');
+                return;
+            }
+            
+            setLoading(true);
+            
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, name, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showAlert('註冊成功！等待管理員審核後即可登入。', 'success');
+                    document.getElementById('registerForm').reset();
+                    document.getElementById('passwordStrength').innerHTML = '';
+                    document.getElementById('passwordMatch').innerHTML = '';
+                } else {
+                    showAlert(data.message || '註冊失敗');
+                }
+            } catch (error) {
+                console.error('註冊錯誤:', error);
+                showAlert('網路錯誤，請稍後再試');
+            } finally {
+                setLoading(false);
+            }
+        });
+        
+        // 檢查是否已登入
+        window.addEventListener('load', async function() {
+            try {
+                const response = await fetch('/api/auth/status');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        // 已登入，重定向到首頁
+                        window.location.href = '/';
+                    }
+                }
+            } catch (error) {
+                // 忽略錯誤，繼續顯示註冊頁面
+            }
+        });
+    </script>
+</body>
+</html>

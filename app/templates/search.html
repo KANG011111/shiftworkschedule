@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}進階搜尋 - 班表管理系統{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">
+    <i class="fas fa-filter d-md-none"></i>
+    進階搜尋
+</h2>
+
+<div class="row">
+    <div class="col-lg-4 col-md-12 order-2 order-lg-1">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h5><i class="fas fa-filter"></i> 搜尋條件</h5>
+            </div>
+            <div class="card-body">
+                <form id="searchForm">
+                    <div class="mb-3">
+                        <label for="employee" class="form-label">員工姓名</label>
+                        <input type="text" class="form-control" id="employee" name="employee" 
+                               placeholder="輸入員工姓名（模糊搜尋）" value="{{ default_employee }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="shift" class="form-label">班別代碼</label>
+                        <input type="text" class="form-control" id="shift" name="shift" 
+                               placeholder="如：FC、P1、H0">
+                        <div class="form-text">支援模糊搜尋，如輸入 "P" 可找到所有 P 班</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="start_date" class="form-label">開始日期</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="end_date" class="form-label">結束日期</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date">
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-search me-2"></i> 搜尋
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="clearForm()">
+                            <i class="fas fa-eraser me-2"></i> 清除
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>快速搜尋</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-success" onclick="quickSearch('FC')">FC 班</button>
+                    <button class="btn btn-outline-warning" onclick="quickSearch('P')">所有 P 班</button>
+                    <button class="btn btn-outline-secondary" onclick="quickSearch('H')">所有休假</button>
+                    <button class="btn btn-outline-info" onclick="quickSearch('N')">所有 N 班</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-8 col-md-12 order-1 order-lg-2">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-list"></i> 搜尋結果</h5>
+                <span id="resultCount" class="badge bg-info"></span>
+            </div>
+            <div class="card-body">
+                <div id="searchResults">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-search fa-3x mb-3"></i>
+                        <p>請設定搜尋條件並點擊「搜尋」</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentResults = [];
+
+document.getElementById('searchForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    performSearch();
+});
+
+function performSearch() {
+    const formData = new FormData(document.getElementById('searchForm'));
+    const params = new URLSearchParams();
+    
+    for (let [key, value] of formData.entries()) {
+        if (value.trim()) {
+            params.append(key, value.trim());
+        }
+    }
+    
+    // 顯示載入狀態
+    document.getElementById('searchResults').innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">搜尋中...</span>
+            </div>
+            <p class="mt-2">搜尋中，請稍候...</p>
+        </div>
+    `;
+    
+    fetch('/api/search?' + params.toString())
+        .then(response => response.json())
+        .then(data => {
+            currentResults = data;
+            displayResults(data);
+        })
+        .catch(error => {
+            console.error('搜尋錯誤:', error);
+            document.getElementById('searchResults').innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i> 搜尋發生錯誤，請稍後再試
+                </div>
+            `;
+        });
+}
+
+function displayResults(results) {
+    const resultsDiv = document.getElementById('searchResults');
+    const countBadge = document.getElementById('resultCount');
+    
+    countBadge.textContent = `${results.length} 筆結果`;
+    
+    if (results.length === 0) {
+        resultsDiv.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="fas fa-inbox fa-3x mb-3"></i>
+                <p>沒有找到符合條件的記錄</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // 按員工分組
+    const groupedResults = {};
+    results.forEach(result => {
+        if (!groupedResults[result.employee]) {
+            groupedResults[result.employee] = [];
+        }
+        groupedResults[result.employee].push(result);
+    });
+    
+    let html = '<div class="accordion" id="searchAccordion">';
+    
+    Object.keys(groupedResults).forEach((employee, index) => {
+        const employeeResults = groupedResults[employee];
+        const isOpen = index === 0 ? 'show' : '';
+        const collapsed = index === 0 ? '' : 'collapsed';
+        
+        html += `
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="heading${index}">
+                    <button class="accordion-button ${collapsed}" type="button" 
+                            data-bs-toggle="collapse" data-bs-target="#collapse${index}">
+                        <strong>${employee}</strong>
+                        <span class="badge bg-primary ms-2">${employeeResults.length} 筆</span>
+                        <button class="btn btn-sm btn-outline-success ms-auto me-2" 
+                                onclick="event.stopPropagation(); viewEmployeeSchedule('${employee}')" 
+                                title="查看${employee}的完整班表">
+                            <i class="fas fa-calendar-alt"></i> 完整班表
+                        </button>
+                    </button>
+                </h2>
+                <div id="collapse${index}" class="accordion-collapse collapse ${isOpen}" 
+                     data-bs-parent="#searchAccordion">
+                    <div class="accordion-body">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>日期</th>
+                                        <th>班別</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+        `;
+        
+        employeeResults.forEach(result => {
+            html += `
+                <tr>
+                    <td>${new Date(result.date).toLocaleDateString('zh-TW')}</td>
+                    <td>
+                        <span class="badge" style="background-color: ${result.color}">
+                            ${result.shift_code}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    resultsDiv.innerHTML = html;
+}
+
+function quickSearch(shiftCode) {
+    document.getElementById('shift').value = shiftCode;
+    document.getElementById('employee').value = '';
+    document.getElementById('start_date').value = '';
+    document.getElementById('end_date').value = '';
+    performSearch();
+}
+
+function clearForm() {
+    document.getElementById('searchForm').reset();
+    document.getElementById('searchResults').innerHTML = `
+        <div class="text-center text-muted">
+            <i class="fas fa-search fa-3x mb-3"></i>
+            <p>請設定搜尋條件並點擊「搜尋」</p>
+        </div>
+    `;
+    document.getElementById('resultCount').textContent = '';
+}
+
+
+function viewEmployeeSchedule(employeeName) {
+    // 重新搜尋該員工的所有班表
+    document.getElementById('employee').value = employeeName;
+    document.getElementById('shift').value = '';
+    document.getElementById('start_date').value = '';
+    document.getElementById('end_date').value = '';
+    performSearch();
+}
+
+// 動態載入預設日期範圍
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        // 獲取實際的日期範圍
+        const response = await fetch('/api/date_range');
+        const dateRange = await response.json();
+        
+        // 設定為實際資料的日期範圍
+        document.getElementById('start_date').value = dateRange.start_date;
+        document.getElementById('end_date').value = dateRange.end_date;
+        
+        // 如果有預設員工名稱，自動執行搜尋
+        const defaultEmployee = document.getElementById('employee').value;
+        if (defaultEmployee.trim()) {
+            performSearch();
+        }
+    } catch (error) {
+        console.error('載入日期範圍失敗:', error);
+        // 如果載入失敗，使用預設值
+        document.getElementById('start_date').value = '2024-07-01';
+        document.getElementById('end_date').value = '2024-07-31';
+    }
+});
+</script>
+{% endblock %}

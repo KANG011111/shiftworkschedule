@@ -1,0 +1,18 @@
+{
+  "name": "shift-schedule-system",
+  "services": [
+    {
+      "name": "web",
+      "type": "web",
+      "buildCommand": "pip install -r requirements.txt",
+      "startCommand": "python run.py",
+      "environment": {
+        "FLASK_ENV": "production",
+        "PORT": "${PORT}",
+        "SECRET_KEY": "${SECRET_KEY}",
+        "DATABASE_URL": "${DATABASE_URL}"
+      },
+      "domains": ["your-domain.zeabur.app"]
+    }
+  ]
+}

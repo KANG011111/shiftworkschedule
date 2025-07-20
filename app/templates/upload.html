@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}匯入 Excel - 班表管理系統{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">
+    <i class="fas fa-upload d-md-none"></i>
+    匯入 Excel 班表
+</h2>
+
+<div class="row">
+    <div class="col-lg-8 col-md-12 order-2 order-lg-1">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-file-excel"></i> 上傳 Excel 檔案</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <label for="file" class="form-label">選擇 Excel 檔案</label>
+                        <input type="file" class="form-control form-control-lg" id="file" name="file" 
+                               accept=".xlsx,.xls" required>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle"></i> 支援 .xlsx 和 .xls 格式
+                        </div>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="fas fa-upload me-2"></i> 上傳並匯入
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 col-md-12 order-1 order-lg-2 mb-3 mb-lg-0">
+        <div class="card">
+            <div class="card-header">
+                <h5>Excel 格式要求</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>必要欄位：</strong></p>
+                <ul>
+                    <li><code>姓名</code> 或 <code>員工姓名</code></li>
+                    <li><code>日期</code></li>
+                    <li><code>班別</code> 或 <code>班次</code></li>
+                </ul>
+                
+                <p><strong>班別代號：</strong></p>
+                <ul>
+                    <li>A - 早班 (08:00-16:00)</li>
+                    <li>B - 中班 (16:00-00:00)</li>
+                    <li>C - 晚班 (00:00-08:00)</li>
+                    <li>OFF - 休假</li>
+                </ul>
+                
+                <p><strong>日期格式：</strong></p>
+                <ul>
+                    <li>YYYY-MM-DD (如：2024-01-15)</li>
+                    <li>或 Excel 日期格式</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>範例格式</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered">
+                        <thead>
+                            <tr>
+                                <th>姓名</th>
+                                <th>日期</th>
+                                <th>班別</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>張三</td>
+                                <td>2024-01-15</td>
+                                <td>A</td>
+                            </tr>
+                            <tr>
+                                <td>李四</td>
+                                <td>2024-01-15</td>
+                                <td>B</td>
+                            </tr>
+                            <tr>
+                                <td>王五</td>
+                                <td>2024-01-15</td>
+                                <td>OFF</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <h6><i class="fas fa-info-circle"></i> 匯入說明</h6>
+            <ul class="mb-0">
+                <li>系統會自動建立新員工（如果不存在）</li>
+                <li>系統會自動建立新班別（如果不存在）</li>
+                <li>重複的排班記錄會被忽略</li>
+                <li>匯入完成後會自動跳轉到日曆檢視</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

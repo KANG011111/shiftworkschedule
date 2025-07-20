@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}{{ employee.name }} 的班表 - 班表管理系統{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2>{{ employee.name }} 的班表</h2>
+    <a href="{{ url_for('main.employees') }}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> 返回員工列表
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-9">
+        <div class="card">
+            <div class="card-header">
+                <h5>班表記錄</h5>
+            </div>
+            <div class="card-body">
+                {% if schedules %}
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>班別</th>
+                                    <th>時間</th>
+                                    <th>狀態</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for schedule in schedules %}
+                                <tr>
+                                    <td>{{ schedule.date.strftime('%Y-%m-%d') }}</td>
+                                    <td>
+                                        <span class="badge" style="background-color: {{ schedule.shift_type.color }}">
+                                            {{ schedule.shift_type.name }} ({{ schedule.shift_type.code }})
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {{ schedule.shift_type.start_time.strftime('%H:%M') }} - 
+                                        {{ schedule.shift_type.end_time.strftime('%H:%M') }}
+                                    </td>
+                                    <td>
+                                        {% if schedule.date == today %}
+                                            <span class="badge bg-primary">今日</span>
+                                        {% elif schedule.date > today %}
+                                            <span class="badge bg-success">未來</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">已過</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> 此員工還沒有班表記錄
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card">
+            <div class="card-header">
+                <h5>員工資訊</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>姓名：</strong>{{ employee.name }}</p>
+                <p><strong>員工代號：</strong>{{ employee.employee_code }}</p>
+                <p><strong>加入日期：</strong>{{ employee.created_at.strftime('%Y-%m-%d') }}</p>
+                {% if schedules %}
+                <p><strong>班表數量：</strong>{{ schedules|length }} 筆</p>
+                {% endif %}
+            </div>
+        </div>
+        
+        {% if schedules %}
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>統計資訊</h5>
+            </div>
+            <div class="card-body">
+                {% set shift_counts = {} %}
+                {% for schedule in schedules %}
+                    {% if schedule.shift_type.name in shift_counts %}
+                        {% set _ = shift_counts.update({schedule.shift_type.name: shift_counts[schedule.shift_type.name] + 1}) %}
+                    {% else %}
+                        {% set _ = shift_counts.update({schedule.shift_type.name: 1}) %}
+                    {% endif %}
+                {% endfor %}
+                
+                {% for shift_name, count in shift_counts.items() %}
+                <div class="mb-2">
+                    <span class="text-muted">{{ shift_name }}：</span>
+                    <strong>{{ count }} 次</strong>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

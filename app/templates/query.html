@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+
+{% block title %}查詢排班 - 班表管理系統{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">
+    <i class="fas fa-search d-md-none"></i>
+    查詢排班
+</h2>
+
+<div class="row">
+    <div class="col-lg-8 col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-calendar-alt"></i> 日期查詢</h5>
+            </div>
+            <div class="card-body">
+                <form method="GET" class="mb-4">
+                    <div class="row">
+                        <div class="col-md-8 col-12 mb-3">
+                            <label for="date" class="form-label">選擇日期</label>
+                            <input type="date" class="form-control form-control-lg" id="date" name="date" 
+                                   value="{{ request.args.get('date', '') }}" required>
+                            <div class="form-text" id="dateRangeText">載入中...</div>
+                        </div>
+                        <div class="col-md-4 col-12 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary btn-lg w-100">
+                                <i class="fas fa-search me-2"></i>查詢
+                            </button>
+                        </div>
+                    </div>
+                </form>
+                
+                <div id="queryResult">
+                    {% if query_date and schedules %}
+                        <h5 class="mb-3">
+                            <i class="fas fa-calendar-day"></i> {{ query_date }} 的排班
+                        </h5>
+                        <div class="row">
+                            {% for schedule in schedules %}
+                            <div class="col-lg-6 col-md-6 col-sm-12 mb-3">
+                                <div class="card h-100" style="border-left: 4px solid {{ schedule.shift_type.color }}">
+                                    <div class="card-body">
+                                        <h6 class="card-title">
+                                            <i class="fas fa-user"></i> {{ schedule.employee.name }}
+                                        </h6>
+                                        <span class="badge mb-2" style="background-color: {{ schedule.shift_type.color }}">
+                                            {{ schedule.shift_type.code }}
+                                        </span>
+                                        <br>
+                                        <small class="text-muted">
+                                            <i class="fas fa-clock"></i>
+                                            {{ schedule.shift_type.start_time.strftime('%H:%M') }} - 
+                                            {{ schedule.shift_type.end_time.strftime('%H:%M') }}
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% elif query_date and not schedules %}
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> {{ query_date }} 沒有排班資料
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4 col-md-12 mt-3 mt-lg-0">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-bolt"></i> 快速查詢</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2" id="quickQueryButtons">
+                    <div class="text-center text-muted">
+                        <div class="spinner-border spinner-border-sm" role="status">
+                            <span class="visually-hidden">載入中...</span>
+                        </div>
+                        載入中...
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>使用說明</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-calendar"></i> 選擇日期查看當天所有排班</li>
+                    <li><i class="fas fa-users"></i> 顯示員工姓名和班別</li>
+                    <li><i class="fas fa-clock"></i> 顯示班別時間資訊</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let dateRange = null;
+
+// 載入日期範圍
+async function loadDateRange() {
+    try {
+        const response = await fetch('/api/date_range');
+        dateRange = await response.json();
+        
+        // 設置日期輸入框的限制
+        const dateInput = document.getElementById('date');
+        dateInput.min = dateRange.start_date;
+        dateInput.max = dateRange.end_date;
+        
+        // 確保日期選擇器顯示正確的年份
+        // 強制設置日期選擇器的年份為資料年份
+        if (dateRange.year && dateRange.year !== new Date().getFullYear()) {
+            // 如果資料年份不是當前年份，需要特別處理
+            console.log(`資料年份: ${dateRange.year}, 當前年份: ${new Date().getFullYear()}`);
+        }
+        
+        // 如果沒有預設值，設置為第一天
+        if (!dateInput.value) {
+            dateInput.value = dateRange.start_date;
+        }
+        
+        // 更新說明文字，顯示可用月份信息
+        let rangeText = `可查詢日期：${dateRange.month_year} (${dateRange.start_date} 至 ${dateRange.end_date})`;
+        
+        // 如果有多個月份，顯示月份統計
+        if (dateRange.available_months && Object.keys(dateRange.available_months).length > 1) {
+            const monthList = Object.values(dateRange.available_months)
+                .map(m => `${m.display}(${m.count}筆)`)
+                .join('、');
+            rangeText += `\n包含月份：${monthList}`;
+        }
+        
+        document.getElementById('dateRangeText').textContent = rangeText;
+            
+        // 創建快速查詢按鈕
+        createQuickQueryButtons();
+        
+        // 添加日期輸入事件監聽，驗證日期有效性
+        dateInput.addEventListener('change', function() {
+            const selectedDate = this.value;
+            if (selectedDate && !dateRange.available_dates.includes(selectedDate)) {
+                alert(`${selectedDate} 沒有班表資料，請選擇其他日期`);
+                this.value = dateRange.start_date;
+            }
+        });
+        
+    } catch (error) {
+        console.error('載入日期範圍失敗:', error);
+        document.getElementById('dateRangeText').textContent = '載入日期範圍失敗';
+    }
+}
+
+function createQuickQueryButtons() {
+    const container = document.getElementById('quickQueryButtons');
+    
+    // 如果有多個月份，為每個月份創建按鈕
+    if (dateRange.available_months && Object.keys(dateRange.available_months).length > 1) {
+        let buttonsHtml = '';
+        let buttonClass = ['btn-outline-primary', 'btn-outline-secondary', 'btn-outline-info', 'btn-outline-success'];
+        let classIndex = 0;
+        
+        for (const [monthKey, monthInfo] of Object.entries(dateRange.available_months)) {
+            const firstDayOfMonth = `${monthInfo.year}-${String(monthInfo.month).padStart(2, '0')}-01`;
+            const buttonClassToUse = buttonClass[classIndex % buttonClass.length];
+            classIndex++;
+            
+            buttonsHtml += `
+                <button class="btn ${buttonClassToUse}" onclick="querySpecificDate('${firstDayOfMonth}')">
+                    ${monthInfo.display} (${monthInfo.count}筆)
+                </button>
+            `;
+        }
+        
+        container.innerHTML = buttonsHtml;
+    } else {
+        // 單月份的原有邏輯
+        const startDate = new Date(dateRange.start_date);
+        const endDate = new Date(dateRange.end_date);
+        const midDate = new Date(startDate.getTime() + (endDate.getTime() - startDate.getTime()) / 2);
+        
+        container.innerHTML = `
+            <button class="btn btn-outline-primary" onclick="querySpecificDate('${dateRange.start_date}')">
+                ${startDate.getDate()}日 (首日)
+            </button>
+            <button class="btn btn-outline-secondary" onclick="querySpecificDate('${midDate.toISOString().split('T')[0]}')">
+                ${midDate.getDate()}日 (中旬)
+            </button>
+            <button class="btn btn-outline-info" onclick="querySpecificDate('${dateRange.end_date}')">
+                ${endDate.getDate()}日 (末日)
+            </button>
+        `;
+    }
+}
+
+function querySpecificDate(date) {
+    document.getElementById('date').value = date;
+    queryDate(date);
+}
+
+function queryDate(date) {
+    fetch('/api/query_shift?date=' + date)
+        .then(response => response.json())
+        .then(data => {
+            displayQueryResult(data, date);
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+}
+
+function displayQueryResult(schedules, date) {
+    var resultDiv = document.getElementById('queryResult');
+    var formattedDate = new Date(date).toLocaleDateString('zh-TW');
+    
+    if (schedules.length > 0) {
+        var html = '<h5>' + formattedDate + ' 的排班</h5>';
+        html += '<div class="row">';
+        
+        schedules.forEach(function(schedule) {
+            html += '<div class="col-md-6 mb-3">';
+            html += '<div class="card" style="border-left: 4px solid ' + schedule.color + '">';
+            html += '<div class="card-body">';
+            html += '<h6 class="card-title">' + schedule.employee + '</h6>';
+            html += '<span class="badge" style="background-color: ' + schedule.color + '">';
+            html += schedule.shift_code;
+            html += '</span>';
+            html += '</div></div></div>';
+        });
+        
+        html += '</div>';
+    } else {
+        html = '<div class="alert alert-info">';
+        html += '<i class="fas fa-info-circle"></i> ' + formattedDate + ' 沒有排班資料';
+        html += '</div>';
+    }
+    
+    resultDiv.innerHTML = html;
+}
+
+// 頁面載入時初始化
+document.addEventListener('DOMContentLoaded', async function() {
+    // 先載入日期範圍
+    await loadDateRange();
+    
+    // 如果 URL 中有日期參數，自動查詢
+    var urlParams = new URLSearchParams(window.location.search);
+    var date = urlParams.get('date');
+    if (date && dateRange) {
+        // 檢查日期是否在有效範圍內
+        if (date >= dateRange.start_date && date <= dateRange.end_date) {
+            queryDate(date);
+        } else {
+            // 如果不在範圍內，使用第一天
+            document.getElementById('date').value = dateRange.start_date;
+        }
+    }
+});
+</script>
+{% endblock %}

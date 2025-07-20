@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+
+{% block title %}日曆檢視 - 班表管理系統{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">
+    <i class="fas fa-calendar d-md-none"></i>
+    班表日曆
+</h2>
+
+<div class="row">
+    <div class="col-lg-9 col-md-12 order-2 order-lg-1">
+        <div class="card">
+            <div class="card-body p-2 p-md-3">
+                <div id="calendar"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-12 order-1 order-lg-2 mb-3 mb-lg-0">
+        <div class="card">
+            <div class="card-header">
+                <h5>班別說明</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #007bff">FC班</span>
+                    <small class="text-muted ms-2">09:00-18:00</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #28a745">P1班</span>
+                    <small class="text-muted ms-2">08:00-17:00</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #ffc107; color: #000">P2班</span>
+                    <small class="text-muted ms-2">14:00-23:00</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #fd7e14">P3班</span>
+                    <small class="text-muted ms-2">17:00-02:00</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #dc3545">P4班</span>
+                    <small class="text-muted ms-2">20:00-05:00</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #6c757d">休假 (H0/H1)</span>
+                    <small class="text-muted ms-2">休息日</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>操作說明</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-click"></i> 點擊日期可查看當天詳細排班</li>
+                    <li><i class="fas fa-navigation"></i> 使用月份導航查看不同月份</li>
+                    <li><i class="fas fa-eye"></i> 顏色標示不同班別</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Event Detail Modal -->
+<div class="modal fade" id="eventModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">排班詳情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="eventModalBody">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var calendarEl = document.getElementById('calendar');
+    
+    // 檢測是否為手機
+    var isMobile = window.innerWidth < 768;
+    
+    var calendar = new FullCalendar.Calendar(calendarEl, {
+        initialView: isMobile ? 'listMonth' : 'dayGridMonth',
+        locale: 'zh-tw',
+        headerToolbar: {
+            left: isMobile ? 'prev,next' : 'prev,next today',
+            center: 'title',
+            right: isMobile ? 'dayGridMonth,listMonth' : 'dayGridMonth,dayGridWeek,listMonth'
+        },
+        height: isMobile ? 'auto' : 600,
+        contentHeight: isMobile ? 400 : 'auto',
+        aspectRatio: isMobile ? 1.0 : 1.35,
+        initialDate: '2025-07-01', // 設定初始顯示 2025年7月
+        events: '/api/events',
+        
+        // 手機優化設定
+        dayMaxEvents: isMobile ? 2 : 4,
+        moreLinkClick: 'popover',
+        
+        // 事件顯示優化
+        eventDisplay: 'block',
+        displayEventTime: !isMobile,
+        eventClick: function(info) {
+            var event = info.event;
+            var modalBody = document.getElementById('eventModalBody');
+            
+            if (event.extendedProps.type === 'summary') {
+                // 彙總事件顯示
+                var employeesList = event.extendedProps.employees.map(name => 
+                    `<li>${name}</li>`
+                ).join('');
+                
+                modalBody.innerHTML = `
+                    <div class="mb-3">
+                        <strong>日期：</strong>${new Date(event.extendedProps.date).toLocaleDateString('zh-TW')}
+                    </div>
+                    <div class="mb-3">
+                        <strong>班別：</strong>
+                        <span class="badge" style="background-color: ${event.backgroundColor}">
+                            ${event.extendedProps.shift_code}班
+                        </span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>人數：</strong>${event.extendedProps.count} 人
+                    </div>
+                    <div class="mb-3">
+                        <strong>員工列表：</strong>
+                        <ul class="mt-2">${employeesList}</ul>
+                    </div>
+                    <div class="mt-3">
+                        <button class="btn btn-primary" onclick="viewDayDetail('${event.extendedProps.date}')">
+                            查看當天完整排班
+                        </button>
+                    </div>
+                `;
+            } else {
+                // 單一事件顯示
+                modalBody.innerHTML = `
+                    <div class="mb-3">
+                        <strong>員工：</strong>${event.extendedProps.employee}
+                    </div>
+                    <div class="mb-3">
+                        <strong>班別：</strong>
+                        <span class="badge" style="background-color: ${event.backgroundColor}">
+                            ${event.extendedProps.shift_code}
+                        </span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>日期：</strong>${event.start.toLocaleDateString('zh-TW')}
+                    </div>
+                    <div class="mt-3">
+                        <button class="btn btn-primary" onclick="viewDayDetail('${event.start.toISOString().split('T')[0]}')">
+                            查看當天其他同事
+                        </button>
+                    </div>
+                `;
+            }
+            
+            var modal = new bootstrap.Modal(document.getElementById('eventModal'));
+            modal.show();
+        },
+        dateClick: function(info) {
+            var selectedDate = info.dateStr;
+            window.location.href = '/query_shift?date=' + selectedDate;
+        }
+    });
+    
+    calendar.render();
+    
+    // 窗口大小改變時重新調整日曆
+    window.addEventListener('resize', function() {
+        setTimeout(function() {
+            calendar.updateSize();
+        }, 100);
+    });
+    
+    // 裝置方向改變時重新調整
+    window.addEventListener('orientationchange', function() {
+        setTimeout(function() {
+            calendar.updateSize();
+        }, 300);
+    });
+});
+
+function viewDayDetail(date) {
+    // 關閉 modal
+    var modal = bootstrap.Modal.getInstance(document.getElementById('eventModal'));
+    if (modal) {
+        modal.hide();
+    }
+    
+    // 跳轉到查詢頁面
+    window.location.href = '/query_shift?date=' + date;
+}
+</script>
+{% endblock %}

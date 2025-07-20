@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+
+{% block title %}管理員控制台 - 班表管理系統{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="fas fa-cogs"></i> 管理員控制台
+        </h2>
+    </div>
+</div>
+
+<!-- 統計卡片 -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-white bg-primary">
+            <div class="card-header">
+                <i class="fas fa-users"></i> 總用戶數
+            </div>
+            <div class="card-body">
+                <h4 class="card-title" id="totalUsers">-</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-white bg-warning">
+            <div class="card-header">
+                <i class="fas fa-clock"></i> 待審核
+            </div>
+            <div class="card-body">
+                <h4 class="card-title" id="pendingUsers">-</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-white bg-success">
+            <div class="card-header">
+                <i class="fas fa-check"></i> 已審核
+            </div>
+            <div class="card-body">
+                <h4 class="card-title" id="approvedUsers">-</h4>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-white bg-danger">
+            <div class="card-header">
+                <i class="fas fa-lock"></i> 已鎖定
+            </div>
+            <div class="card-body">
+                <h4 class="card-title" id="lockedUsers">-</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 待審核用戶 -->
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-user-clock"></i> 待審核用戶</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshPendingUsers()">
+                    <i class="fas fa-sync-alt"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="pendingUsersList">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">載入中...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 用戶管理 -->
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-users-cog"></i> 用戶管理</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshAllUsers()">
+                    <i class="fas fa-sync-alt"></i> 刷新
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="userSearch" placeholder="搜尋用戶..." onkeyup="searchUsers()">
+                </div>
+                <div id="allUsersList" style="max-height: 400px; overflow-y: auto;">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">載入中...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Excel 匯入功能 -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-file-excel"></i> Excel 班表匯入</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-lg-6">
+                        <div class="mb-3">
+                            <label for="excelFile" class="form-label">選擇 Excel 檔案</label>
+                            <input type="file" class="form-control" id="excelFile" accept=".xlsx,.xls">
+                        </div>
+                        <button class="btn btn-success" onclick="uploadExcel()">
+                            <i class="fas fa-upload"></i> 上傳並匯入
+                        </button>
+                    </div>
+                    <div class="col-lg-6">
+                        <h6>Excel 格式說明：</h6>
+                        <ul class="list-unstyled">
+                            <li><code>帳號</code> - 用戶登入帳號</li>
+                            <li><code>姓名</code> - 用戶真實姓名</li>
+                            <li><code>日期</code> - YYYY-MM-DD 格式</li>
+                            <li><code>開始時間</code> - HH:MM 格式</li>
+                            <li><code>結束時間</code> - HH:MM 格式</li>
+                            <li><code>部門</code> - 部門名稱（可選）</li>
+                            <li><code>備註</code> - 備註信息（可選）</li>
+                        </ul>
+                    </div>
+                </div>
+                <div id="uploadResult" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allUsers = [];
+let pendingUsers = [];
+
+// 載入統計數據
+async function loadStatistics() {
+    try {
+        const response = await fetch('/api/admin/users');
+        const data = await response.json();
+        
+        if (data.success) {
+            allUsers = data.data;
+            
+            const total = allUsers.length;
+            const pending = allUsers.filter(u => u.status === 'pending').length;
+            const approved = allUsers.filter(u => u.status === 'approved').length;
+            const locked = allUsers.filter(u => u.is_locked).length;
+            
+            document.getElementById('totalUsers').textContent = total;
+            document.getElementById('pendingUsers').textContent = pending;
+            document.getElementById('approvedUsers').textContent = approved;
+            document.getElementById('lockedUsers').textContent = locked;
+        }
+    } catch (error) {
+        console.error('載入統計數據錯誤:', error);
+    }
+}
+
+// 載入待審核用戶
+async function loadPendingUsers() {
+    try {
+        const response = await fetch('/api/admin/pending-users');
+        const data = await response.json();
+        
+        if (data.success) {
+            pendingUsers = data.data;
+            renderPendingUsers();
+        } else {
+            document.getElementById('pendingUsersList').innerHTML = 
+                '<div class="alert alert-danger">載入失敗</div>';
+        }
+    } catch (error) {
+        console.error('載入待審核用戶錯誤:', error);
+        document.getElementById('pendingUsersList').innerHTML = 
+            '<div class="alert alert-danger">載入失敗</div>';
+    }
+}
+
+// 渲染待審核用戶列表
+function renderPendingUsers() {
+    const container = document.getElementById('pendingUsersList');
+    
+    if (pendingUsers.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center">沒有待審核用戶</div>';
+        return;
+    }
+    
+    let html = '';
+    pendingUsers.forEach(user => {
+        const createDate = new Date(user.created_at).toLocaleDateString('zh-TW');
+        html += `
+            <div class="border rounded p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="mb-1">${user.name}</h6>
+                        <small class="text-muted">帳號: ${user.username}</small><br>
+                        <small class="text-muted">申請時間: ${createDate}</small>
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-success" onclick="approveUser(${user.id}, 'approve')">
+                            <i class="fas fa-check"></i> 通過
+                        </button>
+                        <button class="btn btn-danger" onclick="approveUser(${user.id}, 'reject')">
+                            <i class="fas fa-times"></i> 拒絕
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+// 審核用戶
+async function approveUser(userId, action) {
+    if (!confirm(`確定要${action === 'approve' ? '通過' : '拒絕'}這個用戶的申請嗎？`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/admin/approve-user', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ userId, action })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert(data.message, 'success');
+            await loadPendingUsers();
+            await loadStatistics();
+            await loadAllUsers();
+        } else {
+            showAlert(data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('審核用戶錯誤:', error);
+        showAlert('操作失敗', 'danger');
+    }
+}
+
+// 載入所有用戶
+async function loadAllUsers() {
+    try {
+        const response = await fetch('/api/admin/users');
+        const data = await response.json();
+        
+        if (data.success) {
+            allUsers = data.data;
+            renderAllUsers(allUsers);
+        }
+    } catch (error) {
+        console.error('載入所有用戶錯誤:', error);
+    }
+}
+
+// 渲染所有用戶列表
+function renderAllUsers(users) {
+    const container = document.getElementById('allUsersList');
+    
+    if (users.length === 0) {
+        container.innerHTML = '<div class="text-muted text-center">沒有用戶</div>';
+        return;
+    }
+    
+    let html = '';
+    users.forEach(user => {
+        const statusBadge = getStatusBadge(user.status);
+        const lockIcon = user.is_locked ? '<i class="fas fa-lock text-danger ms-1"></i>' : '';
+        
+        html += `
+            <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong>${user.name}</strong> ${lockIcon}<br>
+                        <small class="text-muted">${user.username} | ${user.role}</small><br>
+                        ${statusBadge}
+                    </div>
+                    <div class="btn-group btn-group-sm">
+                        ${user.is_locked ? 
+                            `<button class="btn btn-warning" onclick="unlockUser(${user.id})">
+                                <i class="fas fa-unlock"></i>
+                            </button>` : ''
+                        }
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                <i class="fas fa-cog"></i>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><button class="dropdown-item" onclick="changeUserStatus(${user.id}, 'approved')">設為已審核</button></li>
+                                <li><button class="dropdown-item" onclick="changeUserStatus(${user.id}, 'disabled')">停用</button></li>
+                                <li><button class="dropdown-item" onclick="changeUserStatus(${user.id}, 'pending')">設為待審核</button></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+// 獲取狀態徽章
+function getStatusBadge(status) {
+    const badges = {
+        'pending': '<span class="badge bg-warning">待審核</span>',
+        'approved': '<span class="badge bg-success">已審核</span>',
+        'rejected': '<span class="badge bg-danger">已拒絕</span>',
+        'disabled': '<span class="badge bg-secondary">已停用</span>'
+    };
+    return badges[status] || '<span class="badge bg-light">未知</span>';
+}
+
+// 搜尋用戶
+function searchUsers() {
+    const search = document.getElementById('userSearch').value.toLowerCase();
+    const filtered = allUsers.filter(user => 
+        user.name.toLowerCase().includes(search) || 
+        user.username.toLowerCase().includes(search)
+    );
+    renderAllUsers(filtered);
+}
+
+// 解鎖用戶
+async function unlockUser(userId) {
+    if (!confirm('確定要解鎖這個用戶嗎？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/user/${userId}/unlock`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert(data.message, 'success');
+            await loadAllUsers();
+            await loadStatistics();
+        } else {
+            showAlert(data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('解鎖用戶錯誤:', error);
+        showAlert('操作失敗', 'danger');
+    }
+}
+
+// 更改用戶狀態
+async function changeUserStatus(userId, status) {
+    try {
+        const response = await fetch(`/api/admin/user/${userId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ status })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert(data.message, 'success');
+            await loadAllUsers();
+            await loadStatistics();
+            await loadPendingUsers();
+        } else {
+            showAlert(data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('更改狀態錯誤:', error);
+        showAlert('操作失敗', 'danger');
+    }
+}
+
+// 刷新函數
+function refreshPendingUsers() {
+    loadPendingUsers();
+}
+
+function refreshAllUsers() {
+    loadAllUsers();
+    loadStatistics();
+}
+
+// 顯示提示訊息
+function showAlert(message, type = 'info') {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+    
+    // 在頁面頂部插入提示
+    const container = document.querySelector('.container-fluid.container-lg');
+    container.insertAdjacentHTML('afterbegin', alertHtml);
+    
+    // 3秒後自動消失
+    setTimeout(() => {
+        const alert = container.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 3000);
+}
+
+// 頁面載入時初始化
+document.addEventListener('DOMContentLoaded', function() {
+    loadStatistics();
+    loadPendingUsers();
+    loadAllUsers();
+});
+
+// Excel 上傳功能（暫時佔位）
+function uploadExcel() {
+    const fileInput = document.getElementById('excelFile');
+    const file = fileInput.files[0];
+    
+    if (!file) {
+        showAlert('請選擇檔案', 'warning');
+        return;
+    }
+    
+    showAlert('Excel 匯入功能開發中...', 'info');
+}
+</script>
+{% endblock %}
