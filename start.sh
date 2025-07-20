@@ -6,6 +6,9 @@ set -e  # 遇到錯誤立即退出
 
 echo "🚀 正在啟動班表管理系統..."
 
+# 創建必要目錄
+mkdir -p instance
+
 # 初始化資料庫
 echo "🗄️ 初始化資料庫..."
 python -c "
