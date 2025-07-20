@@ -8,12 +8,9 @@ import json
 main = Blueprint('main', __name__)
 
 @main.route('/')
-@optional_auth
+@require_auth
 def index():
-    # 檢查用戶是否已登入
     current_user = get_current_user()
-    if not current_user:
-        return redirect(url_for('auth.login_page'))
     
     today = date.today()
     
@@ -36,10 +33,12 @@ def index():
 # @main.route('/add_employee', methods=['POST'])
 
 @main.route('/calendar')
+@require_auth
 def calendar():
     return render_template('calendar.html')
 
 @main.route('/api/events')
+@require_auth
 def get_events():
     start_date = request.args.get('start')
     end_date = request.args.get('end')
@@ -130,6 +129,7 @@ def get_events():
         return jsonify([]), 500
 
 @main.route('/query_shift')
+@require_auth
 def query_shift():
     query_date = request.args.get('date')
     schedules = []
@@ -154,6 +154,7 @@ def query_shift():
     return render_template('query.html', query_date=query_date, schedules=schedules)
 
 @main.route('/api/query_shift')
+@require_auth
 def api_query_shift():
     query_date = request.args.get('date')
     
@@ -185,6 +186,7 @@ def api_query_shift():
     return jsonify([])
 
 @main.route('/search')
+@require_auth
 def search():
     # 如果 URL 中有員工參數，預填到搜尋框
     employee_param = request.args.get('employee', '')
@@ -343,6 +345,7 @@ def api_date_range():
         })
 
 @main.route('/export_schedule')
+@require_auth
 def export_schedule():
     """一鍵匯出月度班表頁面"""
     return render_template('export.html')
