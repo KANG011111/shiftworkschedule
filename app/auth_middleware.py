@@ -45,9 +45,34 @@ def require_admin(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         # 先檢查是否登入
-        auth_result = require_auth(lambda: None)()
-        if auth_result is not None:  # 有返回值表示認證失敗
-            return auth_result
+        session_id = request.cookies.get('sessionId')
+        
+        if not session_id:
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': '需要登入'}), 401
+            return redirect(url_for('auth.login_page'))
+        
+        session = Session.query.get(session_id)
+        
+        if not session or not session.is_valid():
+            # 清除無效session
+            if session:
+                from app.models import db
+                db.session.delete(session)
+                db.session.commit()
+            
+            if request.is_json or request.path.startswith('/api/'):
+                return jsonify({'success': False, 'message': 'Session已過期'}), 401
+            return redirect(url_for('auth.login_page'))
+        
+        # 更新活動時間
+        session.update_activity()
+        from app.models import db
+        db.session.commit()
+        
+        # 將用戶信息存儲在g中供視圖使用
+        g.current_user = session.user
+        g.current_session = session
         
         # 檢查是否為管理員
         if g.current_user.role != 'admin':
