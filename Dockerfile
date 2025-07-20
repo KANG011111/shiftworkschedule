@@ -32,13 +32,8 @@ ENV PYTHONPATH=/app
 # 暴露端口
 EXPOSE 5000
 
-# 創建啟動腳本
-RUN echo '#!/bin/bash\n\
-echo "正在初始化資料庫..."\n\
-python -c "from app import create_app; app = create_app(); app.app_context().push(); from app.models import db; db.create_all(); print(\"資料庫初始化完成\")"\n\
-echo "啟動應用程式..."\n\
-python run.py\n\
-' > start.sh && chmod +x start.sh
+# 設置啟動腳本權限
+RUN chmod +x start.sh
 
 # 運行應用程式
 CMD ["./start.sh"]
