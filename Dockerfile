@@ -17,8 +17,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 複製應用程式代碼
 COPY . .
 
-# 創建資料庫目錄
-RUN mkdir -p instance
+# 創建應用用戶（非 root）
+RUN useradd -m -u 1000 appuser
+
+# 創建資料庫目錄並設定權限
+RUN mkdir -p /app/instance && \
+    chown -R appuser:appuser /app && \
+    chmod -R 755 /app/instance
+
+# 切換到應用用戶
+USER appuser
 
 # 設定環境變數
 ENV FLASK_APP=run.py
@@ -30,7 +38,9 @@ EXPOSE 5000
 
 # 創建啟動腳本
 RUN echo '#!/bin/bash\n\
-python -c "from app import create_app; app = create_app(); app.app_context().push(); from app.models import db; db.create_all()"\n\
+echo "正在初始化資料庫..."\n\
+python -c "from app import create_app; app = create_app(); app.app_context().push(); from app.models import db; db.create_all(); print(\"資料庫初始化完成\")"\n\
+echo "啟動應用程式..."\n\
 python run.py\n\
 ' > start.sh && chmod +x start.sh
 

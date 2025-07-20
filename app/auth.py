@@ -157,12 +157,15 @@ def login():
         }))
         
         # 設置httpOnly cookie，提高安全性
+        import os
+        is_production = os.environ.get('FLASK_ENV') == 'production'
+        
         response.set_cookie(
             'sessionId', 
             session.id, 
             max_age=8*60*60,  # 8小時
             httponly=True,
-            secure=False,  # 開發環境設為False，生產環境應設為True
+            secure=is_production,  # 生產環境啟用 HTTPS
             samesite='Lax'
         )
         

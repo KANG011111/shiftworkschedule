@@ -7,7 +7,15 @@ def create_app():
     # 環境變數配置
     import os
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///instance/shift_schedule.db')
+    
+    # 資料庫配置 - 確保 SQLite 路徑正確
+    database_url = os.environ.get('DATABASE_URL', 'sqlite:////app/instance/shift_schedule.db')
+    if database_url.startswith('sqlite:///') and not database_url.startswith('sqlite:////'):
+        # 相對路徑轉絕對路徑
+        if 'instance/' in database_url:
+            database_url = database_url.replace('sqlite:///', 'sqlite:////app/')
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # 生產環境安全設定
