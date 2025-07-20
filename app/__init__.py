@@ -8,12 +8,19 @@ def create_app():
     import os
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
     
-    # 資料庫配置 - 確保 SQLite 路徑正確
-    database_url = os.environ.get('DATABASE_URL', 'sqlite:////app/instance/shift_schedule.db')
-    if database_url.startswith('sqlite:///') and not database_url.startswith('sqlite:////'):
-        # 相對路徑轉絕對路徑
-        if 'instance/' in database_url:
-            database_url = database_url.replace('sqlite:///', 'sqlite:////app/')
+    # 資料庫配置 - 雲端環境使用記憶體資料庫
+    database_url = os.environ.get('DATABASE_URL')
+    
+    if not database_url:
+        # 根據環境選擇資料庫
+        if os.environ.get('FLASK_ENV') == 'production':
+            # 生產環境使用記憶體資料庫（雲端友好）
+            database_url = 'sqlite:///:memory:'
+            print("🏭 生產環境：使用記憶體 SQLite 資料庫")
+        else:
+            # 開發環境使用檔案資料庫
+            database_url = 'sqlite:///instance/shift_schedule.db'
+            print("🔧 開發環境：使用檔案 SQLite 資料庫")
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -34,20 +41,7 @@ def create_app():
     with app.app_context():
         db.create_all()
         
-        # 創建初始管理員帳號
-        from app.models import User
-        admin_user = User.query.filter_by(username='admin').first()
-        if not admin_user:
-            admin_user = User(
-                username='admin',
-                name='系統管理員',
-                role='admin',
-                status='approved'
-            )
-            admin_user.set_password('admin123')
-            db.session.add(admin_user)
-            db.session.commit()
-            print('初始管理員帳號已創建: admin / admin123')
+        # 注意：初始管理員在啟動腳本中創建，避免重複創建
         
         from app.models import ShiftType
         from datetime import time

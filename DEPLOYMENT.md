@@ -90,14 +90,23 @@ DATABASE_URL=postgresql://user:password@host:5432/dbname
 
 ## 📊 資料庫管理
 
-### SQLite (預設)
-- 資料存儲在 `/app/instance/shift_schedule.db`
-- 自動創建和初始化
-- 適合中小型團隊使用
+### 記憶體 SQLite (雲端部署預設)
+- 🚀 **零配置**：自動啟動，無權限問題
+- ⚡ **高效能**：全記憶體操作，速度快
+- 🔄 **自動重置**：每次部署重新初始化
+- ⚠️ **注意**：重新部署會清空所有資料
+- 👑 **預設帳號**：每次啟動自動創建 `admin/admin123`
 
-### PostgreSQL (建議大型使用)
+### 檔案 SQLite (本地開發)
+- 資料持久化存儲
+- 適合開發和測試環境
+
+### PostgreSQL (企業級持久化)
 1. 在 Zeabur 添加 PostgreSQL 服務
-2. 更新 `DATABASE_URL` 環境變數
+2. 設定 `DATABASE_URL` 環境變數：
+   ```bash
+   DATABASE_URL=postgresql://user:pass@host:5432/dbname
+   ```
 3. 重新部署
 
 ## 🔍 部署後檢查

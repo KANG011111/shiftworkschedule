@@ -6,30 +6,48 @@ set -e  # 遇到錯誤立即退出
 
 echo "🚀 正在啟動班表管理系統..."
 
-# 檢查並創建資料庫目錄
-echo "📂 檢查資料庫目錄..."
-mkdir -p /app/instance
-chmod 755 /app/instance
-
 # 初始化資料庫
 echo "🗄️ 初始化資料庫..."
 python -c "
 import os
-print(f'工作目錄: {os.getcwd()}')
-print(f'當前用戶: {os.getuid()}')
-print(f'資料庫目錄權限: {oct(os.stat(\"/app/instance\").st_mode)[-3:]}')
+print(f'🔧 工作目錄: {os.getcwd()}')
+print(f'👤 當前用戶 UID: {os.getuid()}')
+print(f'🌍 FLASK_ENV: {os.environ.get(\"FLASK_ENV\", \"未設定\")}')
 
 from app import create_app
 app = create_app()
-print(f'資料庫 URI: {app.config[\"SQLALCHEMY_DATABASE_URI\"]}')
+print(f'🗄️ 資料庫 URI: {app.config[\"SQLALCHEMY_DATABASE_URI\"]}')
 
 with app.app_context():
     from app.models import db
     try:
+        # 創建所有表
         db.create_all()
-        print('✅ 資料庫初始化完成')
+        print('✅ 資料庫表創建完成')
+        
+        # 創建預設管理員（如果不存在）
+        from app.models import User
+        admin_user = User.query.filter_by(username='admin').first()
+        if not admin_user:
+            admin_user = User(
+                username='admin',
+                name='系統管理員',
+                role='admin',
+                status='approved'
+            )
+            admin_user.set_password('admin123')
+            db.session.add(admin_user)
+            db.session.commit()
+            print('👑 初始管理員帳號已創建: admin / admin123')
+        else:
+            print('👑 管理員帳號已存在')
+            
+        print('🎉 資料庫初始化完全完成!')
+        
     except Exception as e:
         print(f'❌ 資料庫初始化失敗: {e}')
+        import traceback
+        traceback.print_exc()
         raise
 "
 

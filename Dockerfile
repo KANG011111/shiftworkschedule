@@ -17,13 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 複製應用程式代碼
 COPY . .
 
-# 創建應用用戶（非 root）
-RUN useradd -m -u 1000 appuser
-
-# 創建資料庫目錄並設定權限
-RUN mkdir -p /app/instance && \
-    chown -R appuser:appuser /app && \
-    chmod -R 755 /app/instance
+# 創建應用用戶（非 root，提高安全性）
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
 
 # 切換到應用用戶
 USER appuser
