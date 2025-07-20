@@ -624,17 +624,34 @@ def api_export_monthly_schedule():
 @require_admin
 def upload_excel():
     if request.method == 'POST':
-        file = request.files['file']
-        if file and file.filename.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(file)
+        try:
+            if 'file' not in request.files:
+                return render_template('upload.html', error='請選擇檔案')
             
-            for _, row in df.iterrows():
-                employee_name = row.get('姓名') or row.get('員工姓名')
-                date_col = row.get('日期')
-                shift_code = row.get('班別') or row.get('班次')
-                
-                if pd.isna(employee_name) or pd.isna(date_col) or pd.isna(shift_code):
-                    continue
+            file = request.files['file']
+            if file.filename == '':
+                return render_template('upload.html', error='請選擇檔案')
+            
+            if not file.filename.endswith(('.xlsx', '.xls')):
+                return render_template('upload.html', error='只支援 .xlsx 和 .xls 格式')
+            
+            print(f'開始處理檔案: {file.filename}')
+            df = pd.read_excel(file)
+            print(f'讀取到 {len(df)} 行數據')
+            print(f'欄位: {list(df.columns)}')
+            
+            processed_count = 0
+            error_count = 0
+            
+            for index, row in df.iterrows():
+                try:
+                    employee_name = row.get('姓名') or row.get('員工姓名')
+                    date_col = row.get('日期')
+                    shift_code = row.get('班別') or row.get('班次')
+                    
+                    if pd.isna(employee_name) or pd.isna(date_col) or pd.isna(shift_code):
+                        print(f'第 {index+1} 行數據不完整，跳過')
+                        continue
                 
                 employee = Employee.query.filter_by(name=employee_name).first()
                 if not employee:
@@ -683,15 +700,31 @@ def upload_excel():
                 ).first()
                 
                 if not existing_schedule:
-                    schedule = Schedule(
-                        date=schedule_date,
-                        employee=employee,
-                        shift_type=shift_type
-                    )
-                    db.session.add(schedule)
+                        schedule = Schedule(
+                            date=schedule_date,
+                            employee=employee,
+                            shift_type=shift_type
+                        )
+                        db.session.add(schedule)
+                    
+                    processed_count += 1
+                    print(f'處理第 {index+1} 行: {employee_name} - {schedule_date} - {shift_code}')
+                    
+                except Exception as row_error:
+                    error_count += 1
+                    print(f'第 {index+1} 行處理錯誤: {row_error}')
+                    continue
             
             db.session.commit()
-            return redirect(url_for('main.calendar'))
+            success_message = f'匯入完成！處理了 {processed_count} 筆記錄，{error_count} 筆錯誤'
+            print(success_message)
+            return render_template('upload.html', success=success_message)
+            
+        except Exception as e:
+            db.session.rollback()
+            error_message = f'匯入失敗: {str(e)}'
+            print(error_message)
+            return render_template('upload.html', error=error_message)
     
     return render_template('upload.html')
 

@@ -263,15 +263,20 @@
         // 檢查登入狀態
         async function checkAuthStatus() {
             try {
-                const response = await fetch('/api/auth/status');
+                const response = await fetch('/api/auth/status', {
+                    credentials: 'include', // 確保包含cookies
+                    cache: 'no-cache' // 不使用緩存
+                });
                 if (response.ok) {
                     const data = await response.json();
                     if (data.success) {
                         currentUser = data.data.user;
+                        console.log('用戶已登入:', currentUser); // 調試用
                         updateNavigation(true);
                         return true;
                     }
                 }
+                console.log('認證檢查失敗:', response.status); // 調試用
             } catch (error) {
                 console.error('檢查認證狀態錯誤:', error);
             }
