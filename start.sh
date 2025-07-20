@@ -58,9 +58,25 @@ with app.app_context():
 echo "🌐 啟動應用程式..."
 if [ "$FLASK_ENV" = "production" ]; then
     echo "📦 生產環境模式 - 使用 Gunicorn"
-    # Zeabur 通常使用 $PORT 環境變數，預設 8080
-    DEPLOY_PORT=${PORT:-8080}
-    echo "🔌 使用 Port: $DEPLOY_PORT"
+    echo "🔍 調試所有環境變數:"
+    env | grep -i port || echo "❌ 沒有找到任何 PORT 相關環境變數"
+    
+    # 嘗試多種可能的 Port 環境變數
+    if [ ! -z "$PORT" ]; then
+        DEPLOY_PORT=$PORT
+        echo "✅ 使用 PORT: $DEPLOY_PORT"
+    elif [ ! -z "$port" ]; then
+        DEPLOY_PORT=$port
+        echo "✅ 使用 port: $DEPLOY_PORT"
+    elif [ ! -z "$ZEABUR_PORT" ]; then
+        DEPLOY_PORT=$ZEABUR_PORT
+        echo "✅ 使用 ZEABUR_PORT: $DEPLOY_PORT"
+    else
+        DEPLOY_PORT=8080
+        echo "⚠️ 使用預設 Port: $DEPLOY_PORT"
+    fi
+    
+    echo "🔌 最終使用 Port: $DEPLOY_PORT"
     gunicorn --bind 0.0.0.0:$DEPLOY_PORT --workers 2 --timeout 120 --access-logfile - --error-logfile - run:app
 else
     echo "🔧 開發環境模式 - 使用 Flask 內建伺服器"
