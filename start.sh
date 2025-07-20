@@ -46,11 +46,11 @@ with app.app_context():
             # 驗證創建的帳號
             test_admin = User.query.filter_by(username='admin').first()
             print(f'✅ 管理員驗證: 用戶名={test_admin.username}, 角色={test_admin.role}, 狀態={test_admin.status}')
-            print(f'✅ 密碼測試: {test_admin.check_password("admin123")}')
+            print(f'✅ 密碼測試: {test_admin.check_password(\"admin123\")}')
         else:
             print('👑 管理員帳號已存在')
             print(f'✅ 現有管理員: 用戶名={admin_user.username}, 角色={admin_user.role}, 狀態={admin_user.status}')
-            print(f'✅ 密碼測試: {admin_user.check_password("admin123")}')
+            print(f'✅ 密碼測試: {admin_user.check_password(\"admin123\")}')
             
         print('🎉 資料庫初始化完全完成!')
         
