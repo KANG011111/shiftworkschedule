@@ -8,19 +8,15 @@ def create_app():
     import os
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
     
-    # 資料庫配置 - 雲端環境使用記憶體資料庫
-    database_url = os.environ.get('DATABASE_URL')
-    
-    if not database_url:
-        # 根據環境選擇資料庫
-        if os.environ.get('FLASK_ENV') == 'production':
-            # 生產環境使用記憶體資料庫（雲端友好）
-            database_url = 'sqlite:///:memory:'
-            print("🏭 生產環境：使用記憶體 SQLite 資料庫")
-        else:
-            # 開發環境使用檔案資料庫
-            database_url = 'sqlite:///instance/shift_schedule.db'
-            print("🔧 開發環境：使用檔案 SQLite 資料庫")
+    # 資料庫配置 - 雲端環境強制使用記憶體資料庫
+    if os.environ.get('FLASK_ENV') == 'production':
+        # 生產環境強制使用記憶體資料庫（忽略 DATABASE_URL）
+        database_url = 'sqlite:///:memory:'
+        print("🏭 生產環境：強制使用記憶體 SQLite 資料庫")
+    else:
+        # 開發環境使用檔案資料庫
+        database_url = 'sqlite:///instance/shift_schedule.db'
+        print("🔧 開發環境：使用檔案 SQLite 資料庫")
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
