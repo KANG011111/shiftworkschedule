@@ -8,7 +8,13 @@ import json
 main = Blueprint('main', __name__)
 
 @main.route('/')
+@optional_auth
 def index():
+    # 檢查用戶是否已登入
+    current_user = get_current_user()
+    if not current_user:
+        return redirect(url_for('auth.login_page'))
+    
     today = date.today()
     
     # 指定的員工名單
