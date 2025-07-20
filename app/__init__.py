@@ -37,7 +37,20 @@ def create_app():
     with app.app_context():
         db.create_all()
         
-        # 注意：初始管理員在啟動腳本中創建，避免重複創建
+        # 確保每個 Pod 都有管理員帳號（記憶體資料庫）
+        from app.models import User
+        admin_user = User.query.filter_by(username='admin').first()
+        if not admin_user:
+            admin_user = User(
+                username='admin',
+                name='系統管理員',
+                role='admin',
+                status='approved'
+            )
+            admin_user.set_password('admin123')
+            db.session.add(admin_user)
+            db.session.commit()
+            print('👑 Pod 初始化：創建管理員帳號 admin / admin123')
         
         from app.models import ShiftType
         from datetime import time
