@@ -652,54 +652,54 @@ def upload_excel():
                     if pd.isna(employee_name) or pd.isna(date_col) or pd.isna(shift_code):
                         print(f'第 {index+1} 行數據不完整，跳過')
                         continue
-                
-                employee = Employee.query.filter_by(name=employee_name).first()
-                if not employee:
-                    # 生成唯一的員工代碼
-                    existing_count = Employee.query.count()
-                    employee_code = f"EMP_{existing_count+1:03d}"
                     
-                    # 確保代碼唯一性
-                    while Employee.query.filter_by(employee_code=employee_code).first():
-                        existing_count += 1
+                    employee = Employee.query.filter_by(name=employee_name).first()
+                    if not employee:
+                        # 生成唯一的員工代碼
+                        existing_count = Employee.query.count()
                         employee_code = f"EMP_{existing_count+1:03d}"
+                        
+                        # 確保代碼唯一性
+                        while Employee.query.filter_by(employee_code=employee_code).first():
+                            existing_count += 1
+                            employee_code = f"EMP_{existing_count+1:03d}"
+                        
+                        employee = Employee(name=employee_name, employee_code=employee_code)
+                        db.session.add(employee)
+                        # 立即提交以避免重複代碼問題
+                        try:
+                            db.session.commit()
+                        except Exception as e:
+                            db.session.rollback()
+                            # 如果還是失敗，可能是姓名重複，使用現有員工
+                            employee = Employee.query.filter_by(name=employee_name).first()
+                            if not employee:
+                                raise e
                     
-                    employee = Employee(name=employee_name, employee_code=employee_code)
-                    db.session.add(employee)
-                    # 立即提交以避免重複代碼問題
-                    try:
-                        db.session.commit()
-                    except Exception as e:
-                        db.session.rollback()
-                        # 如果還是失敗，可能是姓名重複，使用現有員工
-                        employee = Employee.query.filter_by(name=employee_name).first()
-                        if not employee:
-                            raise e
-                
-                shift_type = ShiftType.query.filter_by(code=shift_code).first()
-                if not shift_type:
-                    # 根據班別代碼設定預設時間和顏色
-                    shift_name, start_time, end_time, color = get_shift_info(shift_code)
-                    shift_type = ShiftType(
-                        code=shift_code, 
-                        name=shift_name, 
-                        start_time=start_time, 
-                        end_time=end_time,
-                        color=color
-                    )
-                    db.session.add(shift_type)
-                
-                if isinstance(date_col, str):
-                    schedule_date = datetime.strptime(date_col, '%Y-%m-%d').date()
-                else:
-                    schedule_date = date_col.date() if hasattr(date_col, 'date') else date_col
-                
-                existing_schedule = Schedule.query.filter_by(
-                    date=schedule_date,
-                    employee=employee
-                ).first()
-                
-                if not existing_schedule:
+                    shift_type = ShiftType.query.filter_by(code=shift_code).first()
+                    if not shift_type:
+                        # 根據班別代碼設定預設時間和顏色
+                        shift_name, start_time, end_time, color = get_shift_info(shift_code)
+                        shift_type = ShiftType(
+                            code=shift_code, 
+                            name=shift_name, 
+                            start_time=start_time, 
+                            end_time=end_time,
+                            color=color
+                        )
+                        db.session.add(shift_type)
+                    
+                    if isinstance(date_col, str):
+                        schedule_date = datetime.strptime(date_col, '%Y-%m-%d').date()
+                    else:
+                        schedule_date = date_col.date() if hasattr(date_col, 'date') else date_col
+                    
+                    existing_schedule = Schedule.query.filter_by(
+                        date=schedule_date,
+                        employee=employee
+                    ).first()
+                    
+                    if not existing_schedule:
                         schedule = Schedule(
                             date=schedule_date,
                             employee=employee,
