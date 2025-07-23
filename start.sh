@@ -29,7 +29,7 @@ if [ "$FLASK_ENV" = "production" ] || [ "$FLASK_ENV" = "FLASK_ENV=production" ];
     
     echo "🔌 最終使用 Port: $DEPLOY_PORT"
     # 記憶體資料庫使用單worker確保數據一致性，但優化其他參數提升性能
-    gunicorn --bind 0.0.0.0:$DEPLOY_PORT --workers 1 --worker-class sync --worker-connections 1000 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 100 --preload-app --access-logfile - --error-logfile - run:app
+    gunicorn --bind 0.0.0.0:$DEPLOY_PORT --workers 1 --timeout 120 --max-requests 1000 --access-logfile - --error-logfile - run:app
 else
     echo "🔧 開發環境模式 - 使用 Flask 內建伺服器"
     python run.py
