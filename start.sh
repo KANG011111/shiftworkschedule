@@ -69,13 +69,13 @@ if [ "$FLASK_ENV" = "production" ]; then
     echo "🔍 調試所有環境變數:"
     env | grep -i port || echo "❌ 沒有找到任何 PORT 相關環境變數"
     
-    # Docker容器內部使用5000端口
-    DEPLOY_PORT=5000
-    echo "🐳 Docker容器使用端口: $DEPLOY_PORT"
+    # 使用環境變數 PORT 或預設 8080
+    DEPLOY_PORT=${PORT:-8080}
+    echo "🐳 使用端口: $DEPLOY_PORT (來源: ${PORT:+環境變數}${PORT:-預設值})"
     
     echo "🔌 最終使用 Port: $DEPLOY_PORT"
-    # 記憶體資料庫需要單worker避免進程間數據不一致
-    gunicorn --bind 0.0.0.0:$DEPLOY_PORT --workers 1 --timeout 120 --access-logfile - --error-logfile - run:app
+    # 記憶體資料庫使用單worker確保數據一致性，但優化其他參數提升性能
+    gunicorn --bind 0.0.0.0:$DEPLOY_PORT --workers 1 --worker-class sync --worker-connections 1000 --timeout 120 --keep-alive 5 --max-requests 2000 --max-requests-jitter 100 --preload-app --access-logfile - --error-logfile - run:app
 else
     echo "🔧 開發環境模式 - 使用 Flask 內建伺服器"
     python run.py

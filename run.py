@@ -18,7 +18,7 @@ if __name__ == '__main__':
             use_debugger=True
         )
     else:
-        # 生產環境設定
-        debug_mode = flask_env != 'production'
+        # 生產環境設定：完全關閉調試模式
         port = int(os.environ.get('PORT', 8080))
-        app.run(debug=debug_mode, host='0.0.0.0', port=port)
+        print(f"🏭 生產模式：關閉調試，端口 {port}")
+        app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
