@@ -34,8 +34,8 @@ ENV FLASK_APP=run.py
 ENV FLASK_ENV=production
 ENV PYTHONPATH=/app
 
-# 暴露端口
-EXPOSE 5000
+# 暴露端口 (Zeabur會動態分配)
+EXPOSE 8080
 
 # 設置啟動腳本權限
 RUN chmod +x start.sh
