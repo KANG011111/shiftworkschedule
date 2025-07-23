@@ -12,8 +12,8 @@ def create_app():
     database_url = os.environ.get('DATABASE_URL')
     if database_url:
         print(f"🔗 使用環境變數資料庫: {database_url}")
-    elif os.environ.get('FLASK_ENV') == 'production':
-        # 生產環境使用記憶體資料庫（避免權限問題）
+    elif os.environ.get('FLASK_ENV') == 'production' or not os.access(os.getcwd(), os.W_OK):
+        # 生產環境或無寫入權限時使用記憶體資料庫
         database_url = 'sqlite:///:memory:'
         print("🏭 生產環境：使用記憶體 SQLite 資料庫")
     else:
