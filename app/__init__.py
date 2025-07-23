@@ -8,14 +8,20 @@ def create_app():
     import os
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
     
-    # 資料庫配置
+    # 資料庫配置 
     database_url = os.environ.get('DATABASE_URL')
+    flask_env = os.environ.get('FLASK_ENV', '')
+    
+    print(f"🔍 FLASK_ENV 值: '{flask_env}'")
+    print(f"🔍 當前工作目錄: {os.getcwd()}")
+    print(f"🔍 工作目錄可寫: {os.access(os.getcwd(), os.W_OK)}")
+    
     if database_url:
         print(f"🔗 使用環境變數資料庫: {database_url}")
-    elif os.environ.get('FLASK_ENV') == 'production' or not os.access(os.getcwd(), os.W_OK):
+    elif 'production' in flask_env or not os.access(os.getcwd(), os.W_OK):
         # 生產環境或無寫入權限時使用記憶體資料庫
         database_url = 'sqlite:///:memory:'
-        print("🏭 生產環境：使用記憶體 SQLite 資料庫")
+        print("🏭 強制使用記憶體 SQLite 資料庫（生產環境或無寫入權限）")
     else:
         # 開發環境使用檔案資料庫
         database_url = 'sqlite:///instance/shift_schedule.db'
