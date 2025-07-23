@@ -2,6 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
+import json
 
 db = SQLAlchemy()
 
@@ -142,3 +143,34 @@ class Schedule(db.Model):
     
     def __repr__(self):
         return f'<Schedule {self.date} - {self.employee.name} - {self.shift_type.name}>'
+
+class ImportLog(db.Model):
+    """匯入日誌記錄表"""
+    __tablename__ = 'import_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    importer = db.Column(db.String(100), nullable=False, comment='匯入者')
+    filename = db.Column(db.String(255), nullable=False, comment='檔名')
+    import_time = db.Column(db.DateTime, default=datetime.utcnow, comment='匯入時間')
+    data_version = db.Column(db.String(50), nullable=False, comment='選擇版本')
+    target_group = db.Column(db.String(50), nullable=False, comment='匯入群組')
+    validation_result = db.Column(db.Enum('OK', 'WARNING', 'ERROR', name='validation_result'), 
+                                nullable=False, comment='驗證結果')
+    force_import = db.Column(db.Boolean, default=False, comment='是否強制匯入')
+    error_count = db.Column(db.Integer, default=0, comment='錯誤數量')
+    warning_count = db.Column(db.Integer, default=0, comment='警告數量')
+    records_imported = db.Column(db.Integer, default=0, comment='匯入記錄數')
+    validation_errors = db.Column(db.Text, comment='驗證錯誤訊息(JSON格式)')
+    
+    def set_validation_errors(self, errors_list):
+        """設置驗證錯誤列表"""
+        self.validation_errors = json.dumps(errors_list, ensure_ascii=False)
+    
+    def get_validation_errors(self):
+        """獲取驗證錯誤列表"""
+        if self.validation_errors:
+            return json.loads(self.validation_errors)
+        return []
+    
+    def __repr__(self):
+        return f'<ImportLog {self.filename} by {self.importer}>'

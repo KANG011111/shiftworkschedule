@@ -81,6 +81,81 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+/* 移除日期底線樣式，改為純日期顯示 */
+.fc-daygrid-day-number {
+    text-decoration: none !important;
+    border-bottom: none !important;
+    color: #212529;
+    font-weight: normal;
+}
+
+/* 其他月份日期樣式 */
+.fc-day-other .fc-daygrid-day-number {
+    color: #d6d6d6 !important;
+}
+
+/* 所有日期數字統一樣式 */
+.fc-daygrid-day-number {
+    text-decoration: none !important;
+    border-bottom: none !important;
+    color: #212529 !important;
+    font-weight: normal !important;
+    overflow: visible !important;
+    white-space: nowrap !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: auto !important;
+    text-overflow: unset !important;
+    display: inline-block !important;
+    padding: 2px !important;
+}
+
+/* 當前日期樣式 - 與其他日期完全一致 */
+.fc-day-today .fc-daygrid-day-number {
+    color: #212529 !important;
+    font-weight: normal !important;
+    background-color: transparent !important;
+    border-radius: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    line-height: inherit !important;
+}
+
+/* 其他月份日期樣式 */
+.fc-day-other .fc-daygrid-day-number {
+    color: #d6d6d6 !important;
+}
+
+/* 移除週日到週六標題的超連結樣式 */
+.fc-col-header-cell .fc-col-header-cell-cushion {
+    text-decoration: none !important;
+    color: #495057 !important;
+    pointer-events: none !important;
+    cursor: default !important;
+}
+
+.fc-col-header-cell a {
+    text-decoration: none !important;
+    color: #495057 !important;
+    pointer-events: none !important;
+    cursor: default !important;
+}
+
+/* 移除日期點擊的視覺回饋 */
+.fc-daygrid-day:hover {
+    background-color: transparent !important;
+}
+
+.fc-daygrid-day.fc-day-today {
+    background-color: transparent !important;
+}
+
+/* 限制非當月日期的顯示 - 使用JavaScript來處理 */
+.fc-day-other.fc-day-distant {
+    display: none !important;
+}
+</style>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var calendarEl = document.getElementById('calendar');
@@ -89,18 +164,22 @@ document.addEventListener('DOMContentLoaded', function() {
     var isMobile = window.innerWidth < 768;
     
     var calendar = new FullCalendar.Calendar(calendarEl, {
-        initialView: isMobile ? 'listMonth' : 'dayGridMonth',
+        initialView: 'dayGridMonth',
         locale: 'zh-tw',
         headerToolbar: {
             left: isMobile ? 'prev,next' : 'prev,next today',
             center: 'title',
-            right: isMobile ? 'dayGridMonth,listMonth' : 'dayGridMonth,dayGridWeek,listMonth'
+            right: isMobile ? 'dayGridMonth' : 'dayGridMonth,dayGridWeek'
         },
         height: isMobile ? 'auto' : 600,
         contentHeight: isMobile ? 400 : 'auto',
         aspectRatio: isMobile ? 1.0 : 1.35,
         initialDate: '2025-07-01', // 設定初始顯示 2025年7月
         events: '/api/events',
+        
+        // 限制顯示範圍 - 只顯示當月和前後各2天
+        fixedWeekCount: false,
+        showNonCurrentDates: true,
         
         // 手機優化設定
         dayMaxEvents: isMobile ? 2 : 4,
@@ -170,11 +249,88 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         dateClick: function(info) {
             var selectedDate = info.dateStr;
-            window.location.href = '/query_shift?date=' + selectedDate;
+            // 使用 window.open 替換當前頁面，避免留下瀏覽記錄
+            window.location.replace('/query_shift?date=' + selectedDate);
         }
     });
     
     calendar.render();
+    
+    // 限制顯示的日期範圍 - 只保留當月和前後各2天
+    function limitDateRange() {
+        const currentView = calendar.view;
+        if (currentView.type === 'dayGridMonth') {
+            const currentDate = currentView.currentStart;
+            const currentMonth = currentDate.getMonth();
+            const currentYear = currentDate.getFullYear();
+            
+            // 重置所有日期的顯示狀態
+            calendarEl.querySelectorAll('.fc-day-other.fc-day-distant').forEach(day => {
+                day.classList.remove('fc-day-distant');
+            });
+            
+            // 找到所有非當月的日期
+            const otherMonthDays = calendarEl.querySelectorAll('.fc-day-other');
+            
+            otherMonthDays.forEach(day => {
+                const dayDate = new Date(day.getAttribute('data-date'));
+                const dayOfWeek = day.cellIndex; // 0=週日, 6=週六
+                const weekRow = day.parentNode.rowIndex; // 週數
+                
+                let shouldHide = false;
+                
+                if (dayDate.getMonth() < currentMonth || (dayDate.getMonth() === 11 && currentMonth === 0)) {
+                    // 上個月的日期 - 只保留第一週的前2天
+                    if (weekRow > 0 || dayOfWeek > 1) {
+                        shouldHide = true;
+                    }
+                } else if (dayDate.getMonth() > currentMonth || (dayDate.getMonth() === 0 && currentMonth === 11)) {
+                    // 下個月的日期 - 只保留最後一週的後2天
+                    const totalRows = day.closest('tbody').children.length;
+                    if (weekRow < totalRows - 1 || dayOfWeek < 5) {
+                        shouldHide = true;
+                    }
+                }
+                
+                if (shouldHide) {
+                    day.classList.add('fc-day-distant');
+                }
+            });
+            
+            // 修復日期數字顯示問題
+            calendarEl.querySelectorAll('.fc-daygrid-day-number').forEach(dayNumber => {
+                // 確保完整顯示日期數字
+                dayNumber.style.overflow = 'visible';
+                dayNumber.style.textOverflow = 'unset';
+                dayNumber.style.width = 'auto';
+                dayNumber.style.maxWidth = 'none';
+                dayNumber.style.minWidth = 'auto';
+                dayNumber.style.whiteSpace = 'nowrap';
+            });
+            
+            // 移除週日到週六標題的超連結功能
+            calendarEl.querySelectorAll('.fc-col-header-cell a, .fc-col-header-cell .fc-col-header-cell-cushion').forEach(header => {
+                header.style.textDecoration = 'none';
+                header.style.color = '#495057';
+                header.style.pointerEvents = 'none';
+                header.style.cursor = 'default';
+                // 移除點擊事件
+                header.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                };
+            });
+        }
+    }
+    
+    // 在日曆渲染完成後執行限制
+    setTimeout(limitDateRange, 100);
+    
+    // 當切換月份時重新執行限制
+    calendar.on('datesSet', function() {
+        setTimeout(limitDateRange, 100);
+    });
     
     // 窗口大小改變時重新調整日曆
     window.addEventListener('resize', function() {
@@ -198,8 +354,8 @@ function viewDayDetail(date) {
         modal.hide();
     }
     
-    // 跳轉到查詢頁面
-    window.location.href = '/query_shift?date=' + date;
+    // 跳轉到查詢頁面，避免留下瀏覽記錄
+    window.location.replace('/query_shift?date=' + date);
 }
 </script>
 {% endblock %}

@@ -17,12 +17,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 複製應用程式代碼
 COPY . .
 
-# 創建應用用戶（非 root，提高安全性）
+# 創建應用用戶和instance目錄，設置適當權限
 RUN useradd -m -u 1000 appuser && \
+    mkdir -p /app/instance && \
+    chmod 777 /app/instance && \
     chown -R appuser:appuser /app
 
 # 切換到應用用戶
 USER appuser
+
+# 確保instance目錄可寫
+RUN chmod 777 /app/instance
 
 # 設定環境變數
 ENV FLASK_APP=run.py

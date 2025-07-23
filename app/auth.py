@@ -165,7 +165,7 @@ def login():
             session.id, 
             max_age=8*60*60,  # 8小時
             httponly=True,
-            secure=is_production,  # 生產環境啟用 HTTPS
+            secure=False,  # 暫時關閉secure要求，支援HTTP localhost
             samesite='Lax'
         )
         

@@ -92,6 +92,34 @@ cookies.txt
 parsed_schedule.xlsx
 11407演出部部門班表.xlsx
 
-# Test files
+# Test files and data
 test_*.py
 *_test.py
+*test*.csv
+*TEST*.csv
+*測試*.csv
+*.xlsx
+simple_run.py
+fix_employee_codes.py
+import_full_data.py
+full_month_data.csv
+test_import.csv
+test_correct_data.csv
+
+# Development tools
+dev-tools.sh
+dev.sh
+docker-shell.sh
+docker-start.sh
+docker-test.sh
+docker-compose-*.yml
+!docker-compose.yml
+Dockerfile.dev
+config/
+
+# Cookie and temp files
+/tmp/cookies*.txt
+cookies*.txt
+
+# Tools directory
+tools/

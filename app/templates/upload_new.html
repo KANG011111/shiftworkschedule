@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+
+{% block title %}班表匯入驗證系統 v1.2 - 班表管理系統{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">
+    <i class="fas fa-upload"></i>
+    班表匯入驗證系統 v1.2
+    <small class="text-muted">（限系統管理員使用）</small>
+</h2>
+
+<!-- 匯入狀態顯示 -->
+{% if success %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    <i class="fas fa-check-circle"></i> {{ success }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+{% if error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="fas fa-exclamation-triangle"></i> {{ error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-8">
+        <!-- 上傳區域 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-file-upload"></i> 1. 上傳 Excel 檔案</h5>
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" method="post" enctype="multipart/form-data">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="file" class="form-label">選擇檔案</label>
+                            <input type="file" class="form-control" id="file" name="file" 
+                                   accept=".csv" required>
+                            <div class="form-text">
+                                <i class="fas fa-file-csv text-info"></i> 只支援 CSV 格式檔案
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">資料版本</label>
+                            <div class="form-control-plaintext bg-light rounded p-2">
+                                <i class="fas fa-check text-success"></i> 
+                                <span id="detectedVersion" class="fw-bold text-success">一般版本</span>
+                            </div>
+                            <small class="form-text text-muted">
+                                統一使用一般版本格式
+                            </small>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="target_group" class="form-label">匯入人員群組</label>
+                            <select class="form-select" id="target_group" name="target_group" required>
+                                <option value="">請選擇人員群組</option>
+                                <option value="演出人員">演出人員</option>
+                                <option value="技術人員">技術人員</option>
+                                <option value="燈光組">燈光組</option>
+                                <option value="全名單">全名單（不過濾）</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input" type="checkbox" id="skip_invalid" name="skip_invalid">
+                                <label class="form-check-label" for="skip_invalid">
+                                    略過不在白名單者並繼續匯入
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary" id="uploadBtn">
+                            <i class="fas fa-upload"></i> 上傳並驗證
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 預覽區域 -->
+        {% if preview_data %}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-eye"></i> 2. 預覽班表（燈光組核心人員）</h5>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="filterTable('all')" id="filterAll">全部</button>
+                    <button class="btn btn-sm btn-outline-warning" onclick="filterTable('warning')" id="filterWarning">只看警告</button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="filterTable('error')" id="filterError">只看錯誤</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-bordered table-sm table-hover" id="previewTable">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th style="width: 80px; cursor: pointer;" onclick="sortTable(0)">
+                                    行號 <i class="fas fa-sort"></i>
+                                </th>
+                                <th style="width: 120px; cursor: pointer;" onclick="sortTable(1)">
+                                    姓名 <i class="fas fa-sort"></i>
+                                </th>
+                                <th style="width: 120px; cursor: pointer;" onclick="sortTable(2)">
+                                    日期 <i class="fas fa-sort"></i>
+                                </th>
+                                <th style="width: 100px; cursor: pointer;" onclick="sortTable(3)">
+                                    班別 <i class="fas fa-sort"></i>
+                                </th>
+                                <th style="width: 120px; cursor: pointer;" onclick="sortTable(4)">
+                                    驗證結果 <i class="fas fa-sort"></i>
+                                </th>
+                                <th>問題說明</th>
+                            </tr>
+                        </thead>
+                        <tbody id="previewTableBody">
+                            {% for row in preview_data %}
+                            <tr class="{% if row.status == 'error' %}bg-danger-subtle{% elif row.status == 'warning' %}bg-warning-subtle{% else %}bg-success-subtle{% endif %}" 
+                                data-status="{{ row.status }}">
+                                <td>{{ row.row }}</td>
+                                <td>{% if row.name %}{{ row.name }}{% else %}<span class="text-muted">（空白）</span>{% endif %}</td>
+                                <td>{{ row.date }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ row.shift }}</span>
+                                </td>
+                                <td>
+                                    {% if row.status == 'error' %}
+                                        <span class="text-danger fw-bold">❌ 錯誤</span>
+                                    {% elif row.status == 'warning' %}
+                                        <span class="text-warning fw-bold">⚠️ 警告</span>
+                                    {% else %}
+                                        <span class="text-success">✅ 通過</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if row.message %}
+                                        {% if row.status == 'error' %}
+                                            <span class="text-danger fw-bold">{{ row.message }}</span>
+                                        {% elif row.status == 'warning' %}
+                                            <span class="text-warning fw-bold">{{ row.message }}</span>
+                                        {% else %}
+                                            {{ row.message }}
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- 底部統計 -->
+                {% if validation_result %}
+                <div class="mt-3 p-3 bg-light rounded">
+                    <div class="text-center">
+                        <strong>
+                            ✅ {{ validation_result.valid_records }} 筆通過，
+                            ⚠️ {{ validation_result.warnings }} 筆警告，
+                            ❌ {{ validation_result.errors }} 筆錯誤
+                        </strong>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- 驗證結果區域 -->
+        {% if validation_result %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>
+                    <i class="fas fa-check-circle"></i> 3. 驗證結果
+                    {% if validation_result.status == 'OK' %}
+                        <span class="badge bg-success ms-2">通過</span>
+                    {% elif validation_result.status == 'WARNING' %}
+                        <span class="badge bg-warning ms-2">警告</span>
+                    {% else %}
+                        <span class="badge bg-danger ms-2">錯誤</span>
+                    {% endif %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- 統計資訊 -->
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h4 class="text-primary">{{ validation_result.total_records }}</h4>
+                            <small class="text-muted">總記錄數</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h4 class="text-success">{{ validation_result.valid_records }}</h4>
+                            <small class="text-muted">有效記錄</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h4 class="text-warning">{{ validation_result.warnings }}</h4>
+                            <small class="text-muted">警告數量</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center">
+                            <h4 class="text-danger">{{ validation_result.errors }}</h4>
+                            <small class="text-muted">錯誤數量</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 燈光組核心人員班數統計 -->
+                {% if validation_result.core_light_crew_stats %}
+                <div class="card mt-3">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0">
+                            <i class="fas fa-users"></i> 燈光組核心人員班數統計
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for name, count in validation_result.core_light_crew_stats.items() %}
+                            <div class="col-md-4 col-sm-6 mb-2">
+                                <div class="d-flex justify-content-between align-items-center p-2 bg-light rounded">
+                                    <span class="fw-bold">{{ name }}</span>
+                                    <span class="badge bg-primary">{{ count }}班</span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- 班數平衡檢查 -->
+                        {% set shift_counts = validation_result.core_light_crew_stats.values() | list %}
+                        {% set unique_counts = shift_counts | unique | list %}
+                        
+                        {% if unique_counts | length == 1 %}
+                        <div class="alert alert-success mt-2 mb-0">
+                            <i class="fas fa-check-circle"></i> 
+                            <strong>班數平衡：</strong>所有核心人員都有 {{ unique_counts[0] }} 班，排班平衡！
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning mt-2 mb-0">
+                            <i class="fas fa-exclamation-triangle"></i> 
+                            <strong>班數不平衡：</strong>核心人員班數不一致，最少 {{ shift_counts | min }}班，最多 {{ shift_counts | max }}班
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- 錯誤訊息 -->
+                {% if validation_result.error_messages %}
+                <div class="alert alert-warning">
+                    <h6><i class="fas fa-exclamation-triangle"></i> 發現以下問題：</h6>
+                    <ul class="mb-0">
+                        {% for message in validation_result.error_messages %}
+                        <li>{{ message }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- 匯入按鈕 -->
+                <form method="post" action="{{ url_for('main.confirm_import') }}">
+                    <input type="hidden" name="csv_data" value="{{ validation_result.csv_data | e }}">
+                    <input type="hidden" name="target_group" value="{{ validation_result.target_group }}">
+                    <input type="hidden" name="filename" value="{{ validation_result.filename }}">
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        {% if validation_result.status == 'OK' %}
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="fas fa-check"></i> ✅ 匯入資料
+                            </button>
+                        {% else %}
+                            <button type="submit" name="force_import" value="true" 
+                                    class="btn btn-warning btn-lg"
+                                    onclick="return confirm('資料有問題但仍要強制匯入？')">
+                                <i class="fas fa-exclamation-triangle"></i> ⚠️ 我已確認仍要匯入
+                            </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <!-- 規範說明 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-file-csv text-info"></i> CSV 格式規範</h5>
+            </div>
+            <div class="card-body">
+                <h6>檔案格式：</h6>
+                <div class="alert alert-info">
+                    <i class="fas fa-file-csv"></i> <strong>僅支援 CSV 格式（.csv）</strong><br>
+                    <small>系統會自動偵測檔案編碼（UTF-8、Big5、GBK等）</small>
+                </div>
+
+                <h6>必要欄位：</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> <strong>姓名</strong>（或員工姓名）</li>
+                    <li><i class="fas fa-check text-success"></i> <strong>日期</strong></li>
+                    <li><i class="fas fa-check text-success"></i> <strong>班別</strong>（或班次）</li>
+                </ul>
+
+                <h6 class="mt-3">支援班別：</h6>
+                <div class="row">
+                    <div class="col-6">
+                        <span class="badge bg-primary">A</span> 早班<br>
+                        <span class="badge bg-warning">B</span> 中班<br>
+                    </div>
+                    <div class="col-6">
+                        <span class="badge bg-danger">C</span> 晚班<br>
+                        <span class="badge bg-secondary">OFF</span> 休假<br>
+                    </div>
+                </div>
+
+                <h6 class="mt-3">日期格式：</h6>
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> 2024-07-01</li>
+                    <li><i class="fas fa-check text-success"></i> 2024/07/01</li>
+                </ul>
+
+                <h6 class="mt-3">CSV 範例：</h6>
+                <div class="bg-light p-2 rounded">
+                    <code>
+                        姓名,日期,班別<br>
+                        賴秉宏,2024-07-01,A<br>
+                        李惟綱,2024-07-01,B<br>
+                        李家瑋,2024-07-01,C
+                    </code>
+                </div>
+            </div>
+        </div>
+
+        <!-- 匯入歷史 -->
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-history"></i> 最近匯入記錄</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_imports %}
+                    {% for log in recent_imports %}
+                    <div class="border-bottom pb-2 mb-2">
+                        <div class="d-flex justify-content-between">
+                            <small class="fw-bold">{{ log.filename }}</small>
+                            {% if log.validation_result == 'OK' %}
+                                <span class="badge bg-success">OK</span>
+                            {% elif log.validation_result == 'WARNING' %}
+                                <span class="badge bg-warning">WARNING</span>
+                            {% else %}
+                                <span class="badge bg-danger">ERROR</span>
+                            {% endif %}
+                        </div>
+                        <small class="text-muted">
+                            {{ log.importer }} | {{ log.import_time.strftime('%m-%d %H:%M') }} | 
+                            {{ log.target_group }} | {{ log.records_imported }}筆記錄
+                        </small>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">暫無匯入記錄</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    const uploadBtn = document.getElementById('uploadBtn');
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 處理中...';
+    uploadBtn.disabled = true;
+});
+
+// 檔案選擇後顯示版本
+document.getElementById('file').addEventListener('change', function(e) {
+    const fileName = e.target.files[0]?.name || '';
+    const detectedVersionSpan = document.getElementById('detectedVersion');
+    
+    if (fileName) {
+        // 統一使用一般版本
+        detectedVersionSpan.textContent = '一般版本';
+        detectedVersionSpan.className = 'fw-bold text-success';
+        
+        // 添加短暫的閃爍效果
+        detectedVersionSpan.style.backgroundColor = '#d4edda';
+        setTimeout(() => {
+            detectedVersionSpan.style.backgroundColor = '';
+        }, 1000);
+    } else {
+        detectedVersionSpan.textContent = '一般版本';
+        detectedVersionSpan.className = 'fw-bold text-info';
+    }
+});
+
+function toggleShowAll() {
+    const toggleText = document.getElementById('toggleText');
+    const tableBody = document.getElementById('previewTableBody');
+    
+    if (toggleText.textContent === '查看全部') {
+        // 這裡可以通過AJAX加載更多數據
+        toggleText.textContent = '收合';
+        // 暫時只是修改文字，實際實現需要後端支援
+    } else {
+        toggleText.textContent = '查看全部';
+    }
+}
+
+function filterTable(status) {
+    const table = document.getElementById('previewTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+    
+    // 重置按鈕樣式
+    document.getElementById('filterAll').className = 'btn btn-sm btn-outline-secondary';
+    document.getElementById('filterWarning').className = 'btn btn-sm btn-outline-warning';
+    document.getElementById('filterError').className = 'btn btn-sm btn-outline-danger';
+    
+    // 設置當前按鈕為選中狀態
+    if (status === 'all') {
+        document.getElementById('filterAll').className = 'btn btn-sm btn-secondary';
+    } else if (status === 'warning') {
+        document.getElementById('filterWarning').className = 'btn btn-sm btn-warning';
+    } else if (status === 'error') {
+        document.getElementById('filterError').className = 'btn btn-sm btn-danger';
+    }
+    
+    // 過濾行
+    for (let i = 0; i < rows.length; i++) {
+        const rowStatus = rows[i].getAttribute('data-status');
+        if (status === 'all' || rowStatus === status) {
+            rows[i].style.display = '';
+        } else {
+            rows[i].style.display = 'none';
+        }
+    }
+}
+
+function sortTable(columnIndex) {
+    const table = document.getElementById('previewTable');
+    const tbody = table.getElementsByTagName('tbody')[0];
+    const rows = Array.from(tbody.getElementsByTagName('tr'));
+    
+    // 獲取排序方向
+    const currentSort = table.getAttribute('data-sort-column');
+    const currentDirection = table.getAttribute('data-sort-direction') || 'asc';
+    const newDirection = (currentSort == columnIndex && currentDirection === 'asc') ? 'desc' : 'asc';
+    
+    // 排序行
+    rows.sort((a, b) => {
+        const aText = a.cells[columnIndex].textContent.trim();
+        const bText = b.cells[columnIndex].textContent.trim();
+        
+        // 數字比較（對行號欄位）
+        if (columnIndex === 0) {
+            const aNum = parseInt(aText) || 0;
+            const bNum = parseInt(bText) || 0;
+            return newDirection === 'asc' ? aNum - bNum : bNum - aNum;
+        }
+        
+        // 文字比較
+        const comparison = aText.localeCompare(bText, 'zh-TW');
+        return newDirection === 'asc' ? comparison : -comparison;
+    });
+    
+    // 重新插入排序後的行
+    rows.forEach(row => tbody.appendChild(row));
+    
+    // 更新排序狀態
+    table.setAttribute('data-sort-column', columnIndex);
+    table.setAttribute('data-sort-direction', newDirection);
+    
+    // 更新排序圖標
+    const headers = table.getElementsByTagName('th');
+    for (let i = 0; i < headers.length; i++) {
+        const icon = headers[i].querySelector('i');
+        if (icon) {
+            if (i === columnIndex) {
+                icon.className = newDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
+            } else {
+                icon.className = 'fas fa-sort';
+            }
+        }
+    }
+}
+
+// 初始化：預設顯示全部
+window.onload = function() {
+    if (document.getElementById('filterAll')) {
+        filterTable('all');
+    }
+};
+</script>
+{% endblock %}

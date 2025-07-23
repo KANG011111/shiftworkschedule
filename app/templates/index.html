@@ -21,12 +21,6 @@
                                 <span class="badge mb-2" style="background-color: {{ schedule.shift_type.color }}">
                                     {{ schedule.shift_type.code }}
                                 </span>
-                                <br>
-                                <small class="text-muted">
-                                    <i class="fas fa-clock"></i>
-                                    {{ schedule.shift_type.start_time.strftime('%H:%M') }} - 
-                                    {{ schedule.shift_type.end_time.strftime('%H:%M') }}
-                                </small>
                             </p>
                         </div>
                     </div>
@@ -64,11 +58,8 @@
                     <a href="{{ url_for('main.query_shift') }}" class="btn btn-secondary">
                         <i class="fas fa-search me-2"></i>查詢特定日期
                     </a>
-                    <a href="{{ url_for('main.search') }}" class="btn btn-info">
-                        <i class="fas fa-filter me-2"></i>進階搜尋
-                    </a>
-                    <a href="{{ url_for('main.upload_excel') }}" class="btn btn-success" id="uploadExcelBtn" style="display: none;">
-                        <i class="fas fa-upload me-2"></i>匯入 Excel 班表
+                    <a href="{{ url_for('main.upload_new') }}" class="btn btn-success" id="uploadExcelBtn" style="display: none;">
+                        <i class="fas fa-file-csv me-2"></i>匯入 CSV 班表 v1.2
                     </a>
                     <a href="{{ url_for('main.export_schedule') }}" class="btn btn-warning">
                         <i class="fas fa-download me-2"></i>匯出個人班表
@@ -115,7 +106,8 @@
 function searchEmployee() {
     const searchTerm = document.getElementById('quickSearch').value.trim();
     if (searchTerm) {
-        window.location.href = '/search?employee=' + encodeURIComponent(searchTerm);
+        // 直接跳轉到日曆頁面 - 移除進階搜尋功能
+        alert('快速搜尋功能已移除，請使用日曆檢視或查詢特定日期功能');
     }
 }
 

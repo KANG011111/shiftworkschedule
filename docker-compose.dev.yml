@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5001:5000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=1
+      - SECRET_KEY=dev-secret-key-change-this
+      - DATABASE_URL=sqlite:///:memory:
+      - PYTHONPATH=/app
+    volumes:
+      - ./app:/app/app
+      - ./run.py:/app/run.py
+      - ./requirements.txt:/app/requirements.txt
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./instance:/app/instance
+      - uploads_data:/app/uploads
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  uploads_data:
