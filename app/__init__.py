@@ -44,11 +44,35 @@ def create_app():
     app.register_blueprint(main)
     app.register_blueprint(auth)
     
+    # 初始化預設群組
+    def init_default_groups():
+        """初始化預設群組資料"""
+        try:
+            from app.models import GroupMembers
+            
+            default_groups = ['統籌組', '燈光組', '舞台組', '視聽組', '維護組']
+            
+            for group_name in default_groups:
+                existing_group = GroupMembers.query.filter_by(group_name=group_name).first()
+                if not existing_group:
+                    new_group = GroupMembers(group_name=group_name)
+                    new_group.set_members([])  # 空的群組
+                    db.session.add(new_group)
+            
+            db.session.commit()
+            print(f"✅ 初始化 {len(default_groups)} 個預設群組")
+            
+        except Exception as e:
+            print(f"⚠️ 群組初始化錯誤: {e}")
+
     # 資料庫初始化函數
     def init_database():
         try:
             db.create_all()
             print("✅ 資料庫表創建成功")
+            
+            # 初始化預設群組
+            init_default_groups()
             
             # 確保有管理員帳號
             from app.models import User
@@ -76,63 +100,50 @@ def create_app():
                     ShiftType(code='C', name='晚班', start_time=time(0, 0), end_time=time(8, 0), color='#dc3545'),
                     ShiftType(code='OFF', name='休假', start_time=time(0, 0), end_time=time(0, 0), color='#6c757d'),
                     
-                    # FC系列
-                    ShiftType(code='FC', name='消防班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
-                    ShiftType(code='FC/工程', name='FC工程班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
-                    ShiftType(code='FC/急救課', name='FC急救課', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
-                    ShiftType(code='FX', name='固定班', start_time=time(9, 0), end_time=time(17, 0), color='#17a2b8'),
-                    
-                    # P1系列
-                    ShiftType(code='P1s', name='P1早班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
-                    ShiftType(code='P1s2', name='P1早班2', start_time=time(7, 0), end_time=time(15, 0), color='#198754'),
-                    ShiftType(code='P1c', name='P1中班', start_time=time(14, 0), end_time=time(22, 0), color='#ffc107'),
-                    ShiftType(code='P1c2', name='P1中班2', start_time=time(7, 0), end_time=time(15, 0), color='#20c997'),
-                    ShiftType(code='P1n', name='P1夜班', start_time=time(19, 0), end_time=time(7, 0), color='#e83e8c'),
-                    ShiftType(code='P1n/夜超', name='P1夜超班', start_time=time(19, 0), end_time=time(7, 0), color='#dc3545'),
-                    ShiftType(code='P1p', name='P1晚班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
-                    ShiftType(code='P1p2', name='P1晚班2', start_time=time(20, 0), end_time=time(4, 0), color='#6f42c1'),
-                    ShiftType(code='P1p/ME', name='P1晚班/ME', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
-                    
-                    # P2系列
-                    ShiftType(code='P2s', name='P2早班', start_time=time(6, 0), end_time=time(14, 0), color='#198754'),
-                    ShiftType(code='P2c', name='P2中班', start_time=time(14, 0), end_time=time(22, 0), color='#fd7e14'),
-                    ShiftType(code='P2n', name='P2夜班', start_time=time(22, 0), end_time=time(6, 0), color='#6610f2'),
-                    ShiftType(code='P2p', name='P2晚班', start_time=time(22, 0), end_time=time(6, 0), color='#0dcaf0'),
-                    ShiftType(code='P2p/LD', name='P2晚班/LD', start_time=time(22, 0), end_time=time(6, 0), color='#0dcaf0'),
-                    
-                    # P3系列
-                    ShiftType(code='P3c', name='P3中班', start_time=time(14, 0), end_time=time(22, 0), color='#fd7e14'),
-                    ShiftType(code='P3n', name='P3夜班', start_time=time(22, 0), end_time=time(6, 0), color='#e83e8c'),
-                    ShiftType(code='P3n/夜超', name='P3夜超班', start_time=time(22, 0), end_time=time(6, 0), color='#e83e8c'),
-                    ShiftType(code='P3p', name='P3晚班', start_time=time(20, 0), end_time=time(4, 0), color='#6f42c1'),
-                    
-                    # P4系列
-                    ShiftType(code='P4c', name='P4中班', start_time=time(14, 0), end_time=time(22, 0), color='#fd7e14'),
-                    ShiftType(code='P4n', name='P4夜班', start_time=time(20, 0), end_time=time(8, 0), color='#6610f2'),
-                    ShiftType(code='P4p', name='P4晚班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
-                    
-                    # 其他P系列
-                    ShiftType(code='P5', name='P5班', start_time=time(8, 0), end_time=time(16, 0), color='#198754'),
-                    ShiftType(code='P6', name='P6班', start_time=time(16, 0), end_time=time(0, 0), color='#0dcaf0'),
-                    
-                    # C系列
+                    # 新規範班別代碼
                     ShiftType(code='C1', name='C1班', start_time=time(8, 0), end_time=time(16, 0), color='#28a745'),
-                    ShiftType(code='C3', name='C3班', start_time=time(16, 0), end_time=time(0, 0), color='#dc3545'),
-                    
-                    # N系列
+                    ShiftType(code='C2', name='C2班', start_time=time(16, 0), end_time=time(0, 0), color='#ffc107'),
+                    ShiftType(code='C3', name='C3班', start_time=time(0, 0), end_time=time(8, 0), color='#dc3545'),
+                    ShiftType(code='CH/FC', name='CH/FC班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
+                    ShiftType(code='CH/FC*', name='CH/FC*班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
+                    ShiftType(code='E1', name='E1班', start_time=time(8, 0), end_time=time(16, 0), color='#17a2b8'),
+                    ShiftType(code='FC', name='FC班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
+                    ShiftType(code='FC/E1', name='FC/E1班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
+                    ShiftType(code='FC/PM', name='FC/PM班', start_time=time(8, 0), end_time=time(17, 0), color='#fd7e14'),
+                    ShiftType(code='FX', name='FX班', start_time=time(9, 0), end_time=time(17, 0), color='#17a2b8'),
+                    ShiftType(code='H0', name='H0休假', start_time=time(0, 0), end_time=time(0, 0), color='#6c757d'),
+                    ShiftType(code='H1', name='H1休假', start_time=time(0, 0), end_time=time(0, 0), color='#6f42c1'),
                     ShiftType(code='N1', name='N1夜班', start_time=time(0, 0), end_time=time(8, 0), color='#6610f2'),
+                    ShiftType(code='N1/E1', name='N1/E1班', start_time=time(0, 0), end_time=time(8, 0), color='#6610f2'),
                     ShiftType(code='N2', name='N2夜班', start_time=time(22, 0), end_time=time(6, 0), color='#e83e8c'),
-                    
-                    # E和R系列
-                    ShiftType(code='E1', name='E1班', start_time=time(8, 0), end_time=time(16, 0), color='#fd7e14'),
-                    ShiftType(code='R1', name='R1班', start_time=time(9, 0), end_time=time(17, 0), color='#17a2b8'),
-                    
-                    # 休假系列
-                    ShiftType(code='H0', name='休假-週末', start_time=time(0, 0), end_time=time(0, 0), color='#6c757d'),
-                    ShiftType(code='H1', name='休假-平日', start_time=time(0, 0), end_time=time(0, 0), color='#6f42c1'),
-                    
-                    # 其他
-                    ShiftType(code='舞台', name='舞台班', start_time=time(8, 0), end_time=time(17, 0), color='#6c757d')
+                    ShiftType(code='NT/FC', name='NT/FC班', start_time=time(22, 0), end_time=time(6, 0), color='#e83e8c'),
+                    ShiftType(code='P1c', name='P1中班', start_time=time(14, 0), end_time=time(22, 0), color='#ffc107'),
+                    ShiftType(code='P1c/P3p', name='P1c/P3p班', start_time=time(14, 0), end_time=time(22, 0), color='#ffc107'),
+                    ShiftType(code='P1n', name='P1夜班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1n/LED', name='P1n/LED班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1p', name='P1晚班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1p/Crew', name='P1p/Crew班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1p/LED', name='P1p/LED班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1p/ME', name='P1p/ME班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1p/PM', name='P1p/PM班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P1s', name='P1早班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
+                    ShiftType(code='P1s/Crew', name='P1s/Crew班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
+                    ShiftType(code='P1s/PM', name='P1s/PM班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
+                    ShiftType(code='P2c', name='P2中班', start_time=time(14, 0), end_time=time(22, 0), color='#ffc107'),
+                    ShiftType(code='P2n', name='P2夜班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P2p', name='P2晚班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P2p/Crew', name='P2p/Crew班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P2p/LD', name='P2p/LD班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P2s', name='P2早班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
+                    ShiftType(code='P2s/Crew', name='P2s/Crew班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
+                    ShiftType(code='P2s/LD', name='P2s/LD班', start_time=time(6, 0), end_time=time(14, 0), color='#28a745'),
+                    ShiftType(code='P3c', name='P3中班', start_time=time(14, 0), end_time=time(22, 0), color='#ffc107'),
+                    ShiftType(code='P3n', name='P3夜班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P3p', name='P3晚班', start_time=time(20, 0), end_time=time(4, 0), color='#6f42c1'),
+                    ShiftType(code='P4n', name='P4夜班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P4p', name='P4晚班', start_time=time(22, 0), end_time=time(6, 0), color='#dc3545'),
+                    ShiftType(code='P5', name='P5班', start_time=time(8, 0), end_time=time(16, 0), color='#198754'),
+                    ShiftType(code='P5/lobby', name='P5/lobby班', start_time=time(8, 0), end_time=time(16, 0), color='#198754')
                 ]
                 for shift in default_shifts:
                     db.session.add(shift)

@@ -118,7 +118,7 @@ class ShiftType(db.Model):
     __tablename__ = 'shift_types'
     
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(10), unique=True, nullable=False)
+    code = db.Column(db.String(20), unique=True, nullable=False)
     name = db.Column(db.String(50), nullable=False)
     start_time = db.Column(db.Time, nullable=False)
     end_time = db.Column(db.Time, nullable=False)
@@ -138,6 +138,8 @@ class Schedule(db.Model):
     date = db.Column(db.Date, nullable=False)
     employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False)
     shift_type_id = db.Column(db.Integer, db.ForeignKey('shift_types.id'), nullable=False)
+    import_order = db.Column(db.Integer, comment='CSV匯入順序')
+    import_timestamp = db.Column(db.DateTime, comment='匯入時間戳')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -174,3 +176,30 @@ class ImportLog(db.Model):
     
     def __repr__(self):
         return f'<ImportLog {self.filename} by {self.importer}>'
+
+class GroupMembers(db.Model):
+    """群組人員管理表"""
+    __tablename__ = 'group_members'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    group_name = db.Column(db.String(50), unique=True, nullable=False, comment='群組名稱')
+    member_names = db.Column(db.Text, comment='成員姓名(JSON格式)')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def set_members(self, names_list):
+        """設置成員名單"""
+        self.member_names = json.dumps(names_list, ensure_ascii=False)
+    
+    def get_members(self):
+        """獲取成員名單"""
+        if self.member_names:
+            return json.loads(self.member_names)
+        return []
+    
+    def get_member_count(self):
+        """獲取成員數量"""
+        return len(self.get_members())
+    
+    def __repr__(self):
+        return f'<GroupMembers {self.group_name} ({self.get_member_count()} members)>'

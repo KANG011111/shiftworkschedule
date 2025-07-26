@@ -5,6 +5,18 @@
 {% block content %}
 <h2>員工管理</h2>
 
+<!-- 顯示Flash消息 -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
 <div class="row">
     <div class="col-md-8">
         <div class="card">
@@ -55,7 +67,7 @@
                 <h5>新增員工</h5>
             </div>
             <div class="card-body">
-                <form method="POST" action="{{ url_for('main.add_employee') }}">
+                <form method="POST" action="{{ url_for('main.employees') }}">
                     <div class="mb-3">
                         <label for="name" class="form-label">姓名</label>
                         <input type="text" class="form-control" id="name" name="name" required>

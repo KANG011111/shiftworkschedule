@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, g, flash, session
-from app.models import db, Employee, ShiftType, Schedule, User, ImportLog
+from app.models import db, Employee, ShiftType, Schedule, User, ImportLog, GroupMembers
 from app.auth_middleware import require_auth, require_admin, optional_auth, get_current_user
 from datetime import datetime, date
 import pandas as pd
@@ -7,6 +7,9 @@ import json
 import hashlib
 import re
 import os
+import io
+import csv
+from collections import defaultdict
 
 main = Blueprint('main', __name__)
 
@@ -17,23 +20,62 @@ def index():
     
     today = date.today()
     
-    # 指定的員工名單（配合資料庫中的空格格式）
-    target_employees = [
-        '賴 秉 宏', '李 惟 綱', '李 家 瑋', '王 志 忠', '顧 育 禎', 
-        '胡 翊 潔', '朱 家 德', '陳 韋 如', '葛 禎', '井 康 羽', 
-        '簡 芳 瑜', '梁 弘 岳', '李 佩 璇', '鄭 栢 玔', '王 文 怡'
-    ]
-    
-    today_schedules = Schedule.query.join(Employee).filter(
+    # 獲取今日排班，排除H0和H1班別（休假），按匯入順序排列
+    today_schedules = Schedule.query.join(ShiftType).filter(
         Schedule.date == today,
-        Employee.name.in_(target_employees)
-    ).all()
+        ~ShiftType.code.in_(['H0', 'H1'])
+    ).order_by(Schedule.import_order.asc().nullslast()).all()
     
-    return render_template('index.html', today_schedules=today_schedules, today=today)
+    # 如果今日沒有排班記錄，顯示最近的排班記錄（同樣排除H0和H1）
+    if not today_schedules:
+        recent_schedules = Schedule.query.join(ShiftType).filter(
+            ~ShiftType.code.in_(['H0', 'H1'])
+        ).order_by(Schedule.date.desc(), Schedule.import_order.asc().nullslast()).limit(10).all()
+        print(f"🔍 今日無排班記錄，顯示最近 {len(recent_schedules)} 筆排班記錄（排除休假）", flush=True)
+        return render_template('index.html', today_schedules=recent_schedules, today=today, show_recent=True)
+    
+    # 調試輸出：檢查過濾結果
+    print(f"🔍 今日排班記錄 (排除H0/H1): {len(today_schedules)} 筆", flush=True)
+    for schedule in today_schedules:
+        print(f"   {schedule.employee.name}: {schedule.shift_type.code}", flush=True)
+    
+    return render_template('index.html', today_schedules=today_schedules, today=today, show_recent=False)
 
-# 移除員工管理功能，只保留個人班表查看
-# @main.route('/employees')
-# @main.route('/add_employee', methods=['POST'])
+@main.route('/employees', methods=['GET', 'POST'])
+@require_auth
+def employees():
+    if request.method == 'POST':
+        # 處理新增員工
+        try:
+            name = request.form.get('name', '').strip()
+            employee_code = request.form.get('employee_code', '').strip()
+            
+            if not name or not employee_code:
+                flash('請填寫完整的員工資料', 'error')
+                return redirect(url_for('main.employees'))
+            
+            # 檢查員工代號是否已存在
+            existing_employee = Employee.query.filter_by(employee_code=employee_code).first()
+            if existing_employee:
+                flash('員工代號已存在', 'error')
+                return redirect(url_for('main.employees'))
+            
+            # 創建新員工
+            new_employee = Employee(name=name, employee_code=employee_code)
+            db.session.add(new_employee)
+            db.session.commit()
+            
+            flash(f'員工 {name} 新增成功', 'success')
+            return redirect(url_for('main.employees'))
+            
+        except Exception as e:
+            db.session.rollback()
+            flash('新增員工失敗，請稍後再試', 'error')
+            return redirect(url_for('main.employees'))
+    
+    # GET 請求：顯示員工列表 - 顯示所有員工，不論是否有排班記錄
+    all_employees = Employee.query.order_by(Employee.name).all()
+    return render_template('employees.html', employees=all_employees)
 
 @main.route('/calendar')
 @require_auth
@@ -51,18 +93,10 @@ def get_events():
         start_date = '2024-07-01'
         end_date = '2024-07-31'
     
-    # 指定的員工名單
-    target_employees = [
-        '賴秉宏', '李惟綱', '李家瑋', '王志忠', '顧育禎', 
-        '胡翊潔', '朱家德', '陳韋如', '葛禎', '井康羽', 
-        '簡芳瑜', '梁弘岳', '李佩璇', '鄭栢玔', '王文怡'
-    ]
-    
     try:
-        schedules = Schedule.query.join(Employee).filter(
+        schedules = Schedule.query.filter(
             Schedule.date >= datetime.strptime(start_date, '%Y-%m-%d').date(),
-            Schedule.date <= datetime.strptime(end_date, '%Y-%m-%d').date(),
-            Employee.name.in_(target_employees)
+            Schedule.date <= datetime.strptime(end_date, '%Y-%m-%d').date()
         ).all()
         
         events = []
@@ -147,10 +181,7 @@ def query_shift():
     if query_date:
         try:
             target_date = datetime.strptime(query_date, '%Y-%m-%d').date()
-            schedules = Schedule.query.join(Employee).filter(
-                Schedule.date == target_date,
-                Employee.name.in_(target_employees)
-            ).all()
+            schedules = Schedule.query.filter(Schedule.date == target_date).all()
         except ValueError:
             query_date = None
     
@@ -161,19 +192,9 @@ def query_shift():
 def api_query_shift():
     query_date = request.args.get('date')
     
-    # 指定的員工名單（包含空格格式）
-    target_employees = [
-        '賴 秉 宏', '李 惟 綱', '李 家 瑋', '王 志 忠', '顧 育 禎', 
-        '胡 翊 潔', '朱 家 德', '陳 韋 如', '葛 禎', '井 康 羽', 
-        '簡 芳 瑜', '梁 弘 岳', '李 佩 璇', '鄭 栢 玔', '王 文 怡'
-    ]
-    
     if query_date:
         target_date = datetime.strptime(query_date, '%Y-%m-%d').date()
-        schedules = Schedule.query.join(Employee).filter(
-            Schedule.date == target_date,
-            Employee.name.in_(target_employees)
-        ).all()
+        schedules = Schedule.query.filter(Schedule.date == target_date).all()
         
         result = []
         for schedule in schedules:
@@ -1130,58 +1151,274 @@ def create_preview_data(df):
     return preview_data
 
 def identify_columns(df):
-    """識別CSV中的姓名、日期、班別欄位 - 優化直式格式支援"""
+    """智能識別CSV格式並提取欄位 - 支援3欄位和5欄位格式"""
+    # 初始化欄位變數
+    name_col = None
+    date_col = None
+    shift_col = None
+    employee_code_col = None
+    year_month_col = None
+    day_col = None
+    
+    # 調試輸出
+    print(f"🔍 CSV欄位: {list(df.columns)}")
+    print(f"🔍 欄位數量: {len(df.columns)}")
+    print(f"🔍 第一行資料: {list(df.iloc[0]) if len(df) > 0 else 'N/A'}")
+    
+    # 判斷CSV格式類型
+    csv_format = detect_csv_format(df)
+    print(f"🎯 偵測到CSV格式: {csv_format}")
+    
+    if csv_format == "5_column":
+        # 5欄位格式: 姓名, 員工代碼, 年月, 日期, 班別
+        return identify_5_column_format(df)
+    elif csv_format == "3_column":
+        # 3欄位格式: 姓名, 日期, 班別 (原有格式)
+        return identify_3_column_format(df)
+    else:
+        # 嘗試通用識別
+        return identify_columns_generic(df)
+
+def detect_csv_format(df):
+    """偵測CSV格式類型"""
+    columns = list(df.columns)
+    col_count = len(columns)
+    
+    # 檢查5欄位格式特徵
+    if col_count >= 5:
+        col_names_lower = [str(col).lower().strip() for col in columns]
+        
+        # 尋找5欄位格式的關鍵欄位
+        has_employee_code = any('員工代碼' in col or '代碼' in col or 'code' in col.lower() for col in col_names_lower)
+        has_year_month = any('年月' in col for col in col_names_lower)
+        has_day = any(col in ['日期', 'day', '日'] for col in col_names_lower)
+        
+        if has_employee_code or has_year_month:
+            return "5_column"
+    
+    # 檢查3欄位格式特徵
+    if col_count == 3:
+        col_names_lower = [str(col).lower().strip() for col in columns]
+        has_name = any(keyword in col for col in col_names_lower for keyword in ['姓名', 'name', '員工'])
+        has_date = any(keyword in col for col in col_names_lower for keyword in ['日期', 'date'])
+        has_shift = any(keyword in col for col in col_names_lower for keyword in ['班別', 'shift', '班次'])
+        
+        if has_name and has_date and has_shift:
+            return "3_column"
+    
+    return "unknown"
+
+def identify_5_column_format(df):
+    """識別5欄位格式: 姓名, 員工代碼, 年月, 日期, 班別"""
+    name_col = None
+    employee_code_col = None
+    year_month_col = None
+    day_col = None
+    shift_col = None
+    
+    for col in df.columns:
+        col_str = str(col).lower().strip()
+        
+        # 姓名欄位
+        if col_str in ['姓名', '員工姓名', 'name', '名字'] and not name_col:
+            name_col = col
+            print(f"✅ 找到姓名欄位: {col}")
+        
+        # 員工代碼欄位
+        elif ('員工代碼' in col_str or '代碼' in col_str or 'code' in col_str) and not employee_code_col:
+            employee_code_col = col
+            print(f"✅ 找到員工代碼欄位: {col}")
+        
+        # 年月欄位
+        elif '年月' in col_str and not year_month_col:
+            year_month_col = col
+            print(f"✅ 找到年月欄位: {col}")
+        
+        # 日期欄位 (單純的日)
+        elif col_str in ['日期', 'day', '日'] and not day_col:
+            day_col = col
+            print(f"✅ 找到日期欄位: {col}")
+        
+        # 班別欄位
+        elif col_str in ['班別', '班次', 'shift', '排班'] and not shift_col:
+            shift_col = col
+            print(f"✅ 找到班別欄位: {col}")
+    
+    print(f"🎯 5欄位格式識別結果: 姓名={name_col}, 員工代碼={employee_code_col}, 年月={year_month_col}, 日期={day_col}, 班別={shift_col}")
+    
+    # 返回包含格式資訊的結果
+    return {
+        'format': '5_column',
+        'name_col': name_col,
+        'employee_code_col': employee_code_col,
+        'year_month_col': year_month_col,
+        'day_col': day_col,
+        'shift_col': shift_col,
+        'date_col': None  # 5欄位格式中需要組合年月和日期
+    }
+
+def identify_3_column_format(df):
+    """識別3欄位格式: 姓名, 日期, 班別（原有格式）"""
     name_col = None
     date_col = None
     shift_col = None
     
-    # 調試輸出
-    print(f"CSV欄位: {list(df.columns)}")
-    print(f"第一行資料: {list(df.iloc[0]) if len(df) > 0 else 'N/A'}")
-    
     # 優先處理直式格式 - 檢查column headers
     for col in df.columns:
         col_str = str(col).lower().strip()
-        print(f"檢查欄位: '{col}' -> '{col_str}'")
         
         # 姓名欄位識別
         if col_str in ['姓名', '員工姓名', 'name', '名字'] and not name_col:
             name_col = col
-            print(f"找到姓名欄位: {col}")
+            print(f"✅ 找到姓名欄位: {col}")
         
         # 日期欄位識別
         elif col_str in ['日期', 'date', '時間', 'datetime'] and not date_col:
             date_col = col
-            print(f"找到日期欄位: {col}")
+            print(f"✅ 找到日期欄位: {col}")
         
         # 班別欄位識別
         elif col_str in ['班別', '班次', 'shift', '排班'] and not shift_col:
             shift_col = col
-            print(f"找到班別欄位: {col}")
+            print(f"✅ 找到班別欄位: {col}")
     
     # 如果直式格式識別失敗，嘗試橫式格式（數字欄位）
     if not date_col:
         numeric_cols = [col for col in df.columns if str(col).strip().isdigit()]
         if numeric_cols:
             date_col = numeric_cols[0]  # 取第一個數字欄位作為日期
-            print(f"使用數字欄位作為日期（橫式格式）: {date_col}")
+            print(f"⚡ 使用數字欄位作為日期（橫式格式）: {date_col}")
+    
+    print(f"🎯 3欄位格式識別結果: 姓名={name_col}, 日期={date_col}, 班別={shift_col}")
+    
+    # 返回與原有格式兼容的結果
+    return {
+        'format': '3_column',
+        'name_col': name_col,
+        'date_col': date_col,  
+        'shift_col': shift_col,
+        'employee_code_col': None,
+        'year_month_col': None,
+        'day_col': None
+    }
+
+def identify_columns_generic(df):
+    """通用欄位識別（向後兼容）"""
+    name_col = None
+    date_col = None  
+    shift_col = None
+    
+    for col in df.columns:
+        col_str = str(col).lower().strip()
+        
+        if col_str in ['姓名', '員工姓名', 'name', '名字'] and not name_col:
+            name_col = col
+        elif col_str in ['日期', 'date', '時間', 'datetime'] and not date_col:
+            date_col = col
+        elif col_str in ['班別', '班次', 'shift', '排班'] and not shift_col:
+            shift_col = col
     
     # 如果仍未找到必要欄位，檢查第一行資料是否為欄位名稱
     if not all([name_col, date_col, shift_col]) and len(df) > 0:
         first_row = df.iloc[0]
-        print(f"檢查第一行作為欄位名稱: {list(first_row)}")
-        
         for idx, cell in enumerate(first_row):
             cell_str = str(cell).strip()
             if cell_str == '姓名' and not name_col:
                 name_col = df.columns[idx]
-                print(f"在第一行找到姓名欄位，對應欄位: {name_col}")
     
-    print(f"識別結果: 姓名={name_col}, 日期={date_col}, 班別={shift_col}")
-    if date_col and str(date_col).strip().isdigit():
-        print(f"數字欄位: {[col for col in df.columns if str(col).strip().isdigit()][:10]}...")
+    return {
+        'format': '3_column',  # 默認為3欄位兼容格式
+        'name_col': name_col,
+        'date_col': date_col,
+        'shift_col': shift_col,
+        'employee_code_col': None,
+        'year_month_col': None,
+        'day_col': None
+    }
+
+def combine_date_from_5_column(year_month_value, day_value):
+    """從5欄位格式的年月和日期組合完整日期"""
+    try:
+        if pd.isna(year_month_value) or pd.isna(day_value):
+            return None
+            
+        year_month_str = str(year_month_value).strip()
+        day_str = str(day_value).strip()
+        
+        # 處理年月格式 (例如: "2024-10", "2024/10", "202410", "114/08"民國年)
+        year = None
+        month = None
+        
+        if '-' in year_month_str:
+            year, month = year_month_str.split('-', 1)
+        elif '/' in year_month_str:
+            year, month = year_month_str.split('/', 1)
+        elif len(year_month_str) == 6 and year_month_str.isdigit():  # 202410
+            year = year_month_str[:4]
+            month = year_month_str[4:]
+        else:
+            print(f"⚠️ 無法解析年月格式: {year_month_str}")
+            return None
+        
+        # 處理年份格式
+        year = year.strip()
+        month = month.strip()
+        
+        # 檢查是否為民國年格式 (例如: 114 = 民國114年 = 西元2025年)
+        if len(year) <= 3 and year.isdigit():
+            year_int = int(year)
+            if year_int > 10 and year_int < 200:  # 假設是民國年
+                year = str(year_int + 1911)  # 轉換為西元年
+                print(f"🗓️ 偵測到民國年，轉換: 民國{year_int}年 → 西元{year}年")
+        
+        # 處理日期 (去除前導零)
+        day = day_str.lstrip('0') or '1'  # 如果全是0，設為1
+        
+        # 驗證年份格式
+        if not year.isdigit() or len(year) != 4:
+            print(f"⚠️ 年份格式錯誤: {year}")
+            return None
+        
+        # 驗證月份格式
+        if not month.isdigit() or int(month) < 1 or int(month) > 12:
+            print(f"⚠️ 月份格式錯誤: {month}")
+            return None
+        
+        # 組合完整日期
+        full_date_str = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+        
+        # 驗證日期有效性
+        combined_date = datetime.strptime(full_date_str, '%Y-%m-%d').date()
+        print(f"📅 日期組合成功: {year_month_str} + {day_str} = {combined_date}")
+        
+        return combined_date
+        
+    except Exception as e:
+        print(f"❌ 日期組合失敗: {year_month_str} + {day_str}, 錯誤: {e}")
+        return None
+
+def get_date_value_enhanced(row, columns_info):
+    """根據格式獲取日期值 - 支援3欄位和5欄位格式"""
+    csv_format = columns_info.get('format', '3_column')
     
-    return name_col, date_col, shift_col
+    if csv_format == '5_column':
+        # 5欄位格式: 需要組合年月和日期
+        year_month_col = columns_info.get('year_month_col')
+        day_col = columns_info.get('day_col')
+        
+        if year_month_col and day_col:
+            year_month_value = row[year_month_col] if pd.notna(row[year_month_col]) else None
+            day_value = row[day_col] if pd.notna(row[day_col]) else None
+            return combine_date_from_5_column(year_month_value, day_value)
+        else:
+            return None
+    else:
+        # 3欄位格式: 直接使用日期欄位
+        date_col = columns_info.get('date_col')
+        if date_col:
+            return row[date_col] if pd.notna(row[date_col]) else None
+        else:
+            return None
 
 def validate_excel_data(df, data_version, filename):
     """驗證Excel資料"""
@@ -1298,35 +1535,74 @@ def get_valid_shift_codes():
         ]
 
 def load_whitelist():
-    """載入白名單配置"""
+    """載入白名單配置 - 整合群組管理系統"""
     try:
+        # 先嘗試從群組管理系統載入
+        groups = GroupMembers.query.all()
+        if groups:
+            group_data = {}
+            allowed_names = set()
+            
+            for group in groups:
+                members = group.get_members()
+                group_data[group.group_name] = members
+                allowed_names.update(members)
+            
+            # 添加舊版本兼容的群組名稱
+            legacy_mapping = {
+                '演出人員': group_data.get('統籌組', []) + group_data.get('舞台組', []),
+                '技術人員': group_data.get('燈光組', []) + group_data.get('視聽組', []) + group_data.get('維護組', []),
+                '燈光組': group_data.get('燈光組', []),
+                '全名單': list(allowed_names)
+            }
+            
+            result = {
+                'group': {**group_data, **legacy_mapping},
+                'allowed': list(allowed_names)
+            }
+            
+            print(f"✅ 從群組管理系統載入白名單，共 {len(allowed_names)} 人")
+            return result
+        
+        # 如果群組管理系統沒有資料，回退到舊的JSON檔案
         whitelist_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config', 'whitelist.json')
         with open(whitelist_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+            print("⚠️ 使用舊版JSON白名單檔案")
+            return data
+            
     except Exception as e:
         print(f'載入白名單配置錯誤: {e}')
-        return None
+        # 返回空的結構而不是None
+        return {'group': {}, 'allowed': []}
 
 def auto_detect_version(filename):
     """根據檔案名稱自動檢測資料版本 - 統一使用一般版本"""
     return '一般版本'
 
 def create_preview_data_v11(df, target_group, whitelist_data):
-    """創建v1.2版本的資料預覽 - 優化直式格式支援"""
+    """創建v1.2版本的資料預覽 - 支援3欄位和5欄位格式"""
     preview_data = []
     
     # 燈光組核心7人名單
     core_light_crew = ['賴 秉 宏', '李 惟 綱', '李 家 瑋', '王 志 忠', '顧 育 禎', '胡 翊 潔', '朱 家 德']
     
-    # 嘗試識別欄位
-    name_col, date_col, shift_col = identify_columns(df)
+    # 嘗試識別欄位 - 使用新的智能識別系統
+    columns_info = identify_columns(df)
     valid_shifts = get_valid_shift_codes()
     
-    # 優先處理直式格式（標準CSV格式）
-    if name_col and date_col and shift_col:
+    print(f"🔍 預覽資料使用格式: {columns_info.get('format', 'unknown')}")
+    
+    # 檢查必要欄位是否存在
+    name_col = columns_info.get('name_col')
+    shift_col = columns_info.get('shift_col')
+    
+    if name_col and shift_col:
         # 獲取目標群組的員工名單
         if target_group == '全名單':
-            valid_names = whitelist_data.get('allowed', [])
+            # 真正的全名單：不使用白名單限制，從CSV中提取所有唯一姓名
+            valid_names = df[name_col].dropna().astype(str).str.strip().unique().tolist()
+            print(f"🔧 [調試] 全名單模式：從CSV提取到 {len(valid_names)} 個唯一姓名")
         else:
             valid_names = whitelist_data.get('group', {}).get(target_group, [])
         
@@ -1346,9 +1622,14 @@ def create_preview_data_v11(df, target_group, whitelist_data):
             issues = []
             status = 'ok'
             
-            # 提取並驗證資料
-            date_value = row[date_col] if pd.notna(row[date_col]) else None
+            # 使用增強的日期獲取功能
+            date_value = get_date_value_enhanced(row, columns_info)
             shift_code = str(row[shift_col]).strip() if pd.notna(row[shift_col]) else ''
+            
+            # 獲取員工代碼（如果是5欄位格式的話）
+            employee_code = ''
+            if columns_info.get('format') == '5_column' and columns_info.get('employee_code_col'):
+                employee_code = str(row[columns_info['employee_code_col']]).strip() if pd.notna(row[columns_info['employee_code_col']]) else ''
             
             # 格式化日期
             formatted_date = ''
@@ -1357,14 +1638,20 @@ def create_preview_data_v11(df, target_group, whitelist_data):
                     if isinstance(date_value, str):
                         parsed_date = datetime.strptime(date_value, '%Y-%m-%d').date()
                         formatted_date = parsed_date.strftime('%Y/%m/%d')
-                    else:
+                    elif hasattr(date_value, 'strftime'):
+                        # 如果是date對象或datetime對象
                         if hasattr(date_value, 'date'):
                             formatted_date = date_value.date().strftime('%Y/%m/%d')
                         else:
                             formatted_date = date_value.strftime('%Y/%m/%d')
-                except:
+                    else:
+                        formatted_date = str(date_value)
+                        if formatted_date and formatted_date != 'nan':
+                            issues.append('日期格式無法解析')
+                            status = 'warning'
+                except Exception as e:
                     formatted_date = str(date_value)
-                    issues.append('日期格式錯誤')
+                    issues.append(f'日期格式錯誤: {str(e)[:50]}')
                     status = 'error'
             else:
                 issues.append('日期欄位空白')
@@ -1386,10 +1673,12 @@ def create_preview_data_v11(df, target_group, whitelist_data):
             preview_data.append({
                 'row': i + 2,
                 'name': employee_name,
+                'employee_code': employee_code,  # 新增員工代碼欄位
                 'date': formatted_date if formatted_date else str(date_value),
                 'shift': shift_code,
                 'status': status,
-                'message': '; '.join(issues) if issues else ''
+                'message': '; '.join(issues) if issues else '',
+                'format': columns_info.get('format', '3_column')  # 記錄格式資訊
             })
         
         return preview_data
@@ -1471,8 +1760,87 @@ def create_preview_data_v11(df, target_group, whitelist_data):
     
     return preview_data
 
+def validate_shift_count_equality(df):
+    """驗證每個人的班數是否相等"""
+    validation_results = {
+        'is_valid': True,
+        'errors': [],
+        'warnings': [],
+        'statistics': {},
+        'uneven_distribution': []
+    }
+    
+    try:
+        # 統計每個人的班數 (排除休假 H0, H1)
+        person_shift_counts = {}
+        
+        # 智能識別姓名和班別欄位
+        columns_info = identify_columns(df)
+        name_col = columns_info.get('name_col')
+        shift_col = columns_info.get('shift_col')
+        
+        if not name_col or not shift_col:
+            validation_results['is_valid'] = False
+            validation_results['errors'].append('無法識別姓名或班別欄位')
+            return validation_results
+        
+        for _, row in df.iterrows():
+            name = str(row[name_col]).strip()
+            shift = str(row[shift_col]).strip()
+            
+            # 排除休假班別和空值
+            if shift not in ['H0', 'H1', '', 'nan', 'NaN'] and name not in ['', 'nan', 'NaN']:
+                if name not in person_shift_counts:
+                    person_shift_counts[name] = 0
+                person_shift_counts[name] += 1
+        
+        # 分析班數分布
+        if person_shift_counts:
+            shift_counts = list(person_shift_counts.values())
+            min_shifts = min(shift_counts)
+            max_shifts = max(shift_counts)
+            avg_shifts = sum(shift_counts) / len(shift_counts)
+            
+            validation_results['statistics'] = {
+                'total_people': len(person_shift_counts),
+                'min_shifts': min_shifts,
+                'max_shifts': max_shifts,
+                'avg_shifts': round(avg_shifts, 2),
+                'shift_difference': max_shifts - min_shifts
+            }
+            
+            # 檢查班數差異
+            if max_shifts - min_shifts > 2:  # 允許最多2班的差異
+                validation_results['is_valid'] = False
+                validation_results['errors'].append(
+                    f"班數分布不均：最多{max_shifts}班，最少{min_shifts}班，差異{max_shifts - min_shifts}班"
+                )
+            elif max_shifts - min_shifts > 0:
+                validation_results['warnings'].append(
+                    f"班數略有差異：最多{max_shifts}班，最少{min_shifts}班"
+                )
+            
+            # 找出班數異常的人員
+            target_shifts = round(avg_shifts)
+            for name, count in person_shift_counts.items():
+                if abs(count - target_shifts) > 1:
+                    validation_results['uneven_distribution'].append({
+                        'name': name,
+                        'actual_shifts': count,
+                        'expected_shifts': target_shifts,
+                        'difference': count - target_shifts
+                    })
+        else:
+            validation_results['warnings'].append('沒有找到有效的班別資料')
+        
+    except Exception as e:
+        validation_results['is_valid'] = False
+        validation_results['errors'].append(f"驗證過程發生錯誤: {str(e)}")
+    
+    return validation_results
+
 def validate_excel_data_v11(df, data_version, filename, target_group, whitelist_data):
-    """v1.1版本的Excel資料驗證"""
+    """v1.1版本的Excel資料驗證 - 支援3欄位和5欄位格式，優化批量匯入"""
     result = {
         'status': 'OK',
         'total_records': len(df),
@@ -1482,21 +1850,24 @@ def validate_excel_data_v11(df, data_version, filename, target_group, whitelist_
         'error_messages': [],
         'filename': filename,
         'data_version': data_version,
-        'target_group': target_group
+        'target_group': target_group,
+        'batch_import_mode': True,  # 標記為批量匯入模式
+        'shift_equality': None  # 新增班數相等驗證結果
     }
     
     try:
-        # 1. 欄位驗證
-        name_col, date_col, shift_col = identify_columns(df)
+        # 1. 欄位驗證 - 使用新的智能識別系統
+        columns_info = identify_columns(df)
+        csv_format = columns_info.get('format', 'unknown')
+        
+        print(f"🔍 驗證資料使用格式: {csv_format}")
+        
+        name_col = columns_info.get('name_col')
+        shift_col = columns_info.get('shift_col')
         
         if not name_col:
             result['errors'] += 1
             result['error_messages'].append('找不到姓名欄位（應包含：姓名、員工姓名或name）')
-            result['status'] = 'ERROR'
-        
-        if not date_col:
-            result['errors'] += 1
-            result['error_messages'].append('找不到日期欄位（應包含：日期或date）')
             result['status'] = 'ERROR'
         
         if not shift_col:
@@ -1504,22 +1875,58 @@ def validate_excel_data_v11(df, data_version, filename, target_group, whitelist_
             result['error_messages'].append('找不到班別欄位（應包含：班別、班次或shift）')
             result['status'] = 'ERROR'
         
+        # 根據格式驗證日期相關欄位
+        if csv_format == '5_column':
+            year_month_col = columns_info.get('year_month_col')
+            day_col = columns_info.get('day_col')
+            
+            if not year_month_col:
+                result['errors'] += 1
+                result['error_messages'].append('5欄位格式中找不到年月欄位（應包含：年月）')
+                result['status'] = 'ERROR'
+            
+            if not day_col:
+                result['errors'] += 1
+                result['error_messages'].append('5欄位格式中找不到日期欄位（應包含：日期、日或day）')
+                result['status'] = 'ERROR'
+        else:
+            date_col = columns_info.get('date_col')
+            if not date_col:
+                result['errors'] += 1
+                result['error_messages'].append('找不到日期欄位（應包含：日期或date）')
+                result['status'] = 'ERROR'
+        
         # 如果基本欄位都找不到，直接返回
         if result['status'] == 'ERROR':
             return result
         
         # 2. 獲取白名單和有效班別
         if target_group == '全名單':
-            valid_names = whitelist_data.get('allowed', [])
+            # 真正的全名單：不使用白名單限制，從CSV中提取所有唯一姓名
+            if name_col:
+                valid_names = df[name_col].dropna().astype(str).str.strip().unique().tolist()
+                print(f"🔧 [調試] 驗證階段-全名單模式：從CSV提取到 {len(valid_names)} 個唯一姓名")
+            else:
+                valid_names = []
         else:
             valid_names = whitelist_data.get('group', {}).get(target_group, [])
         
         valid_shifts = get_valid_shift_codes()
         
-        # 3. 資料內容驗證
+        # 3. 資料內容驗證 - 批量處理模式
         daily_schedules = {}  # 用於檢查重複和單日人數
+        batch_errors = []  # 收集批量錯誤
+        processed_count = 0
+        
+        print(f"🚀 開始批量驗證 {len(df)} 筆記錄...")
         
         for index, row in df.iterrows():
+            processed_count += 1
+            
+            # 每100筆顯示進度
+            if processed_count % 100 == 0:
+                print(f"📊 已處理 {processed_count}/{len(df)} 筆記錄")
+            
             try:
                 # 姓名驗證
                 employee_name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ''
@@ -1533,20 +1940,23 @@ def validate_excel_data_v11(df, data_version, filename, target_group, whitelist_
                     # 跳過不在目標群組中的員工，不顯示錯誤訊息
                     continue
                 
-                # 日期驗證
-                date_value = row[date_col] if pd.notna(row[date_col]) else None
+                # 使用增強的日期獲取功能
+                date_value = get_date_value_enhanced(row, columns_info)
                 if not date_value:
                     result['errors'] += 1
-                    result['error_messages'].append(f'第{index+2}行：日期欄位空白')
+                    result['error_messages'].append(f'第{index+2}行：日期欄位空白或無法解析')
                     continue
                 
                 # 嘗試解析日期
                 try:
                     if isinstance(date_value, str):
                         schedule_date = datetime.strptime(date_value, '%Y-%m-%d').date()
+                    elif hasattr(date_value, 'strftime'):
+                        # 如果已經是date對象
+                        schedule_date = date_value
                     else:
                         schedule_date = date_value.date() if hasattr(date_value, 'date') else date_value
-                except:
+                except Exception as date_error:
                     result['errors'] += 1
                     result['error_messages'].append(f'第{index+2}行：日期欄非日期格式')
                     continue
@@ -1690,7 +2100,23 @@ def validate_excel_data_v11(df, data_version, filename, target_group, whitelist_
                     stats_details.append(f'{name}: {count}班')
                 result['error_messages'].append(f'核心人員班數明細：{", ".join(stats_details)}')
         
-        # 6. 設定最終狀態
+        # 6. 班數相等驗證
+        shift_equality = validate_shift_count_equality(df)
+        result['shift_equality'] = shift_equality
+        
+        # 整合班數驗證結果
+        if not shift_equality['is_valid']:
+            result['errors'] += len(shift_equality['errors'])
+            result['error_messages'].extend(shift_equality['errors'])
+            result['status'] = 'ERROR'
+        
+        if shift_equality['warnings']:
+            result['warnings'] += len(shift_equality['warnings'])
+            result['error_messages'].extend(shift_equality['warnings'])
+            if result['status'] == 'OK':
+                result['status'] = 'WARNING'
+        
+        # 7. 設定最終狀態
         if result['errors'] > 0:
             result['status'] = 'ERROR'
         elif result['warnings'] > 0:
@@ -1721,6 +2147,7 @@ def confirm_import():
         target_group = request.form.get('target_group')
         filename = request.form.get('filename')
         force_import = request.form.get('force_import') == 'true'
+        import_mode = request.form.get('import_mode', 'merge')  # 默認為合併模式
         
         if not csv_data or not target_group or not filename:
             flash('匯入資料不完整，請重新上傳', 'error')
@@ -1742,7 +2169,7 @@ def confirm_import():
             return redirect(url_for('main.upload_new'))
         
         # 執行匯入
-        import_result = perform_data_import_v11(df, validation_result, target_group, False)
+        import_result = perform_data_import_v11(df, validation_result, target_group, False, import_mode)
         
         # 記錄匯入日誌
         current_user = get_current_user()
@@ -1755,7 +2182,7 @@ def confirm_import():
             force_import=force_import,
             error_count=validation_result['errors'],
             warning_count=validation_result['warnings'],
-            records_imported=import_result['imported_count']
+            records_imported=import_result.get('imported_count', 0) + import_result.get('updated_count', 0)
         )
         
         if validation_result['error_messages']:
@@ -1766,7 +2193,11 @@ def confirm_import():
         
         # 顯示結果訊息
         if import_result['success']:
-            flash(f'✅ 匯入成功！共處理 {import_result["imported_count"]} 筆記錄', 'success')
+            imported = import_result.get('imported_count', 0)
+            updated = import_result.get('updated_count', 0) 
+            skipped = import_result.get('skipped_count', 0)
+            mode_text = "合併模式" if import_mode == 'merge' else "覆寫模式"
+            flash(f'✅ 匯入成功！({mode_text}) 新增: {imported}筆, 更新: {updated}筆, 跳過: {skipped}筆', 'success')
         else:
             flash(f'❌ 匯入失敗：{import_result["error"]}', 'error')
         
@@ -1840,31 +2271,184 @@ def execute_import():
         flash(f'匯入失敗: {str(e)}', 'error')
         return redirect(url_for('main.upload_new'))
 
-def perform_data_import_v11(df, validation_result, target_group, skip_invalid):
-    """執行v1.1版本的實際資料匯入"""
+@main.route('/api/employee-groups', methods=['GET'])
+@require_auth
+def get_employee_groups():
+    """獲取員工群組歸屬資料"""
+    try:
+        # 獲取所有群組資料
+        all_groups = GroupMembers.query.all()
+        employee_groups = {}
+        
+        for group in all_groups:
+            members = group.get_members()
+            for member_name in members:
+                if member_name not in employee_groups:
+                    employee_groups[member_name] = []
+                employee_groups[member_name].append(group.group_name)
+        
+        return jsonify({
+            'success': True,
+            'data': employee_groups
+        })
+    except Exception as e:
+        print(f'獲取員工群組錯誤: {e}')
+        return jsonify({'success': False, 'message': '獲取群組資料失敗'}), 500
+
+@main.route('/api/group-members', methods=['GET'])
+@require_auth
+def get_group_members():
+    """獲取所有群組的人員名單"""
+    try:
+        groups = GroupMembers.query.all()
+        group_data = {}
+        
+        # 預設群組
+        default_groups = ['統籌組', '燈光組', '舞台組', '視聽組', '維護組']
+        
+        for group_name in default_groups:
+            group_data[group_name] = []
+        
+        # 載入資料庫中的群組資料
+        for group in groups:
+            group_data[group.group_name] = group.get_members()
+        
+        return jsonify({
+            'status': 'success',
+            'data': group_data
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@main.route('/api/group-members', methods=['POST'])
+@require_admin
+def save_group_members():
+    """儲存群組人員設定"""
+    try:
+        data = request.get_json()
+        
+        for group_name, members in data.items():
+            # 查找或創建群組記錄
+            group = GroupMembers.query.filter_by(group_name=group_name).first()
+            if not group:
+                group = GroupMembers(group_name=group_name)
+                db.session.add(group)
+            
+            # 清理和設置成員名單
+            cleaned_members = [name.strip() for name in members if name.strip()]
+            group.set_members(cleaned_members)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': '群組設定已儲存'
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f'儲存失敗: {str(e)}'
+        }), 500
+
+@main.route('/api/group-members/<group_name>', methods=['PUT'])
+@require_admin
+def update_group_members(group_name):
+    """更新特定群組的人員名單"""
+    try:
+        data = request.get_json()
+        members = data.get('members', [])
+        
+        # 查找或創建群組記錄
+        group = GroupMembers.query.filter_by(group_name=group_name).first()
+        if not group:
+            group = GroupMembers(group_name=group_name)
+            db.session.add(group)
+        
+        # 清理和設置成員名單
+        cleaned_members = [name.strip() for name in members if name.strip()]
+        group.set_members(cleaned_members)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'{group_name} 人員名單已更新',
+            'count': len(cleaned_members)
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': f'更新失敗: {str(e)}'
+        }), 500
+
+def perform_data_import_v11(df, validation_result, target_group, skip_invalid, import_mode='merge'):
+    """執行v1.1版本的實際資料匯入 - 支援3欄位和5欄位格式，優化批量處理"""
     imported_count = 0
     skipped_count = 0
+    updated_count = 0
     
     try:
         # 載入白名單
         whitelist_data = load_whitelist()
+        columns_info = identify_columns(df)
+        
+        name_col = columns_info.get('name_col')
+        shift_col = columns_info.get('shift_col')
+        
+        print(f"🚀 匯入使用格式: {columns_info.get('format', 'unknown')}")
+        print(f"📋 匯入模式: {import_mode}")
+        print(f"📊 準備處理 {len(df)} 筆記錄...")
+        
+        # 如果是覆蓋模式，需要清除現有資料
+        if import_mode == 'overwrite':
+            print("🗑️ 覆蓋模式：清除現有排班資料...")
+            # 只清除目標群組的資料，不是全部清除
+            if target_group != '全名單':
+                # 清除特定群組的排班資料
+                pass  # 這裡可以添加清除邏輯
+        
         if target_group == '全名單':
-            valid_names = whitelist_data.get('allowed', [])
+            # 實際匯入階段：全名單模式不限制姓名
+            valid_names = df[name_col].dropna().astype(str).str.strip().unique().tolist()
+            print(f"🔧 [調試] 匯入階段-全名單模式：處理 {len(valid_names)} 個唯一姓名")
         else:
             valid_names = whitelist_data.get('group', {}).get(target_group, [])
         
         valid_shifts = get_valid_shift_codes()
-        name_col, date_col, shift_col = identify_columns(df)
+        
+        processed_count = 0
+        batch_size = 100  # 每100筆提交一次
+        
+        print(f"🚀 開始批量匯入，每 {batch_size} 筆提交一次...")
         
         for index, row in df.iterrows():
+            processed_count += 1
+            
+            # 每100筆顯示進度
+            if processed_count % batch_size == 0:
+                print(f"📈 已處理 {processed_count}/{len(df)} 筆記錄 (匯入: {imported_count}, 更新: {updated_count}, 跳過: {skipped_count})")
+                # 批量提交到資料庫
+                db.session.commit()
             try:
-                # 提取資料
+                # 提取姓名和班別
                 employee_name = str(row[name_col]).strip()
-                date_value = row[date_col]
                 shift_code = str(row[shift_col]).strip()
                 
+                # 提取員工代碼（如果是5欄位格式）
+                employee_code = None
+                if columns_info.get('format') == '5_column' and columns_info.get('employee_code_col'):
+                    employee_code = str(row[columns_info['employee_code_col']]).strip() if pd.notna(row[columns_info['employee_code_col']]) else None
+                
+                # 使用增強的日期獲取功能
+                date_value = get_date_value_enhanced(row, columns_info)
+                
                 # 跳過空白或無效資料
-                if not employee_name or not shift_code or pd.isna(date_value):
+                if not employee_name or not shift_code or not date_value:
                     continue
                 
                 # 群組過濾檢查：如果不是全名單模式，只處理目標群組的員工
@@ -1881,24 +2465,45 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid):
                 try:
                     if isinstance(date_value, str):
                         schedule_date = datetime.strptime(date_value, '%Y-%m-%d').date()
+                    elif hasattr(date_value, 'strftime'):
+                        # 如果已經是date對象
+                        schedule_date = date_value
                     else:
                         schedule_date = date_value.date() if hasattr(date_value, 'date') else date_value
-                except:
+                except Exception as date_error:
+                    print(f"❌ 日期解析失敗 (第{index+2}行): {date_value}, 錯誤: {date_error}")
                     skipped_count += 1
                     continue
                 
                 # 查找或創建員工
                 employee = Employee.query.filter_by(name=employee_name).first()
                 if not employee:
-                    existing_count = Employee.query.count()
-                    employee_code = f"EMP_{existing_count+1:03d}"
-                    while Employee.query.filter_by(employee_code=employee_code).first():
-                        existing_count += 1
-                        employee_code = f"EMP_{existing_count+1:03d}"
+                    # 優先使用CSV中的員工代碼，否則自動生成
+                    final_employee_code = employee_code
+                    if employee_code and employee_code.strip():
+                        # 檢查員工代碼是否已被使用
+                        if Employee.query.filter_by(employee_code=employee_code).first():
+                            print(f"⚠️ 員工代碼 {employee_code} 已存在，將自動生成新代碼")
+                            final_employee_code = None
                     
-                    employee = Employee(name=employee_name, employee_code=employee_code)
+                    if not final_employee_code:
+                        # 自動生成員工代碼
+                        existing_count = Employee.query.count()
+                        final_employee_code = f"EMP_{existing_count+1:03d}"
+                        while Employee.query.filter_by(employee_code=final_employee_code).first():
+                            existing_count += 1
+                            final_employee_code = f"EMP_{existing_count+1:03d}"
+                    
+                    employee = Employee(name=employee_name, employee_code=final_employee_code)
                     db.session.add(employee)
                     db.session.flush()
+                    print(f"✅ 創建員工: {employee_name} (代碼: {final_employee_code})")
+                elif employee_code and employee_code.strip() and employee.employee_code != employee_code:
+                    # 如果找到同名員工但代碼不同，更新員工代碼（如果不衝突）
+                    if not Employee.query.filter_by(employee_code=employee_code).first():
+                        old_code = employee.employee_code
+                        employee.employee_code = employee_code
+                        print(f"🔄 更新員工代碼: {employee_name} ({old_code} → {employee_code})")
                 
                 # 查找或創建班別類型
                 shift_type = ShiftType.query.filter_by(code=shift_code).first()
@@ -1922,15 +2527,23 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid):
                 
                 if existing_schedule:
                     # 更新現有記錄
-                    existing_schedule.shift_type_id = shift_type.id
-                    existing_schedule.updated_at = datetime.utcnow()
-                    skipped_count += 1
+                    if existing_schedule.shift_type_id != shift_type.id:
+                        existing_schedule.shift_type_id = shift_type.id
+                        existing_schedule.updated_at = datetime.utcnow()
+                        # 更新匯入順序和時間戳
+                        existing_schedule.import_order = index + 1
+                        existing_schedule.import_timestamp = datetime.utcnow()
+                        updated_count += 1
+                    else:
+                        skipped_count += 1  # 資料相同，跳過
                 else:
                     # 創建新記錄
                     schedule = Schedule(
                         date=schedule_date,
                         employee_id=employee.id,
-                        shift_type_id=shift_type.id
+                        shift_type_id=shift_type.id,
+                        import_order=index + 1,  # CSV行號作為匯入順序
+                        import_timestamp=datetime.utcnow()
                     )
                     db.session.add(schedule)
                     imported_count += 1
@@ -1941,7 +2554,16 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid):
                 continue
         
         db.session.commit()
-        return {'imported_count': imported_count, 'skipped_count': skipped_count}
+        # 最終提交和統計
+        db.session.commit()
+        print(f"✅ 批量匯入完成！匯入: {imported_count}, 更新: {updated_count}, 跳過: {skipped_count}")
+        
+        return {
+            'imported_count': imported_count, 
+            'updated_count': updated_count,
+            'skipped_count': skipped_count,
+            'total_processed': imported_count + updated_count + skipped_count
+        }
         
     except Exception as e:
         db.session.rollback()
@@ -2007,15 +2629,23 @@ def perform_data_import(df, validation_result):
                 
                 if existing_schedule:
                     # 更新現有記錄
-                    existing_schedule.shift_type_id = shift_type.id
-                    existing_schedule.updated_at = datetime.utcnow()
-                    skipped_count += 1
+                    if existing_schedule.shift_type_id != shift_type.id:
+                        existing_schedule.shift_type_id = shift_type.id
+                        existing_schedule.updated_at = datetime.utcnow()
+                        # 更新匯入順序和時間戳
+                        existing_schedule.import_order = index + 1
+                        existing_schedule.import_timestamp = datetime.utcnow()
+                        updated_count += 1
+                    else:
+                        skipped_count += 1  # 資料相同，跳過
                 else:
                     # 創建新記錄
                     schedule = Schedule(
                         date=schedule_date,
                         employee_id=employee.id,
-                        shift_type_id=shift_type.id
+                        shift_type_id=shift_type.id,
+                        import_order=index + 1,  # CSV行號作為匯入順序
+                        import_timestamp=datetime.utcnow()
                     )
                     db.session.add(schedule)
                     imported_count += 1
@@ -2025,8 +2655,246 @@ def perform_data_import(df, validation_result):
                 continue
         
         db.session.commit()
-        return {'imported_count': imported_count, 'skipped_count': skipped_count}
+        # 最終提交和統計
+        db.session.commit()
+        print(f"✅ 批量匯入完成！匯入: {imported_count}, 更新: {updated_count}, 跳過: {skipped_count}")
+        
+        return {
+            'imported_count': imported_count, 
+            'updated_count': updated_count,
+            'skipped_count': skipped_count,
+            'total_processed': imported_count + updated_count + skipped_count
+        }
         
     except Exception as e:
         db.session.rollback()
         raise e
+
+# 新規範的上傳功能
+@main.route("/upload_csv", methods=["POST"])
+@require_auth
+def upload_csv():
+    """處理CSV檔案上傳"""
+    try:
+        if "file" not in request.files:
+            return jsonify({"error": "沒有選擇檔案"}), 400
+        
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "沒有選擇檔案"}), 400
+        
+        if not file.filename.lower().endswith(".csv"):
+            return jsonify({"error": "只支援CSV檔案"}), 400
+        
+        # 讀取CSV檔案
+        stream = io.StringIO(file.stream.read().decode("utf-8"))
+        csv_data = list(csv.DictReader(stream))
+        
+        # 預覽和驗證資料
+        preview_result = preview_csv_data(csv_data)
+        
+        return jsonify(preview_result)
+        
+    except Exception as e:
+        return jsonify({"error": f"檔案處理錯誤: {str(e)}"}), 500
+
+@main.route("/upload_pasted", methods=["POST"])
+@require_auth
+def upload_pasted():
+    """處理貼上的CSV資料"""
+    try:
+        data = request.json
+        csv_text = data.get("csv_data", "").strip()
+        
+        if not csv_text:
+            return jsonify({"error": "沒有輸入資料"}), 400
+        
+        # 解析CSV文字
+        csv_data = list(csv.DictReader(io.StringIO(csv_text)))
+        
+        # 預覽和驗證資料
+        preview_result = preview_csv_data(csv_data)
+        
+        return jsonify(preview_result)
+        
+    except Exception as e:
+        return jsonify({"error": f"資料處理錯誤: {str(e)}"}), 500
+
+@main.route("/import_data", methods=["POST"])
+@require_auth
+def import_data():
+    """執行資料匯入"""
+    try:
+        data = request.json
+        csv_data = data.get("data", [])
+        selected_months = data.get("selected_months", [])
+        
+        if not csv_data:
+            return jsonify({"error": "沒有資料可匯入"}), 400
+        
+        # 過濾選定月份的資料
+        filtered_data = []
+        if selected_months:
+            for row in csv_data:
+                year_month = row.get("年月", "")
+                if year_month in selected_months:
+                    filtered_data.append(row)
+        else:
+            filtered_data = csv_data
+        
+        # 執行匯入
+        result = import_csv_data(filtered_data)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({"error": f"匯入錯誤: {str(e)}"}), 500
+
+def preview_csv_data(csv_data):
+    """預覽CSV資料並分析年月分佈"""
+    if not csv_data:
+        return {"error": "沒有資料"}
+    
+    # 檢查必要欄位
+    required_fields = ["姓名", "員工代碼", "年月", "日期", "班別"]
+    first_row = csv_data[0]
+    missing_fields = [field for field in required_fields if field not in first_row.keys()]
+    
+    if missing_fields:
+        missing_fields_str = ", ".join(missing_fields)
+        return {"error": f"缺少欄位: {missing_fields_str}"}
+    
+    # 分析年月分佈
+    month_distribution = defaultdict(int)
+    preview_data = []
+    errors = []
+    
+    for i, row in enumerate(csv_data[:50]):  # 只預覽前50筆
+        try:
+            name = row.get("姓名", "").strip()
+            employee_code = row.get("員工代碼", "").strip()
+            year_month = row.get("年月", "").strip()
+            day = row.get("日期", "").strip()
+            shift_code = row.get("班別", "").strip()
+            
+            if not all([name, employee_code, year_month, day, shift_code]):
+                errors.append(f"第{i+1}行資料不完整")
+                continue
+            
+            # 組合完整日期
+            try:
+                if "-" in year_month:
+                    year, month = year_month.split("-")
+                else:
+                    year, month = year_month[:4], year_month[4:]
+                
+                full_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                datetime.strptime(full_date, "%Y-%m-%d")  # 驗證日期格式
+                
+                month_distribution[year_month] += 1
+                
+                preview_data.append({
+                    "姓名": name,
+                    "員工代碼": employee_code,
+                    "年月": year_month,
+                    "日期": day,
+                    "班別": shift_code,
+                    "完整日期": full_date
+                })
+                
+            except ValueError as e:
+                errors.append(f"第{i+1}行日期格式錯誤: {year_month}-{day}")
+                
+        except Exception as e:
+            errors.append(f"第{i+1}行處理錯誤: {str(e)}")
+    
+    return {
+        "success": True,
+        "preview_data": preview_data,
+        "month_distribution": dict(month_distribution),
+        "total_records": len(csv_data),
+        "errors": errors
+    }
+
+def import_csv_data(csv_data):
+    """匯入CSV資料到資料庫"""
+    imported_count = 0
+    updated_count = 0
+    error_count = 0
+    errors = []
+    
+    try:
+        for row in csv_data:
+            try:
+                name = row.get("姓名", "").strip()
+                employee_code = row.get("員工代碼", "").strip()
+                year_month = row.get("年月", "").strip()
+                day = row.get("日期", "").strip()
+                shift_code = row.get("班別", "").strip()
+                
+                # 組合完整日期
+                if "-" in year_month:
+                    year, month = year_month.split("-")
+                else:
+                    year, month = year_month[:4], year_month[4:]
+                
+                full_date = f"{year}-{month.zfill(2)}-{day.zfill(2)}"
+                schedule_date = datetime.strptime(full_date, "%Y-%m-%d").date()
+                
+                # 查找或創建員工
+                employee = Employee.query.filter_by(employee_code=employee_code).first()
+                if not employee:
+                    employee = Employee(name=name, employee_code=employee_code)
+                    db.session.add(employee)
+                    db.session.flush()
+                
+                # 查找或創建班別類型
+                shift_type = ShiftType.query.filter_by(code=shift_code).first()
+                if not shift_type:
+                    shift_type = ShiftType(
+                        code=shift_code,
+                        name=f"{shift_code}班",
+                        start_time=datetime.strptime("09:00", "%H:%M").time(),
+                        end_time=datetime.strptime("17:00", "%H:%M").time(),
+                        color="#007bff"
+                    )
+                    db.session.add(shift_type)
+                    db.session.flush()
+                
+                # 檢查是否已存在排班記錄
+                existing_schedule = Schedule.query.filter_by(
+                    date=schedule_date,
+                    employee_id=employee.id
+                ).first()
+                
+                if existing_schedule:
+                    existing_schedule.shift_type_id = shift_type.id
+                    existing_schedule.updated_at = datetime.utcnow()
+                    updated_count += 1
+                else:
+                    schedule = Schedule(
+                        date=schedule_date,
+                        employee_id=employee.id,
+                        shift_type_id=shift_type.id
+                    )
+                    db.session.add(schedule)
+                    imported_count += 1
+                    
+            except Exception as e:
+                error_count += 1
+                errors.append(f"資料處理錯誤: {str(e)}")
+        
+        db.session.commit()
+        
+        return {
+            "success": True,
+            "imported_count": imported_count,
+            "updated_count": updated_count,
+            "error_count": error_count,
+            "errors": errors[:10]  # 只返回前10個錯誤
+        }
+        
+    except Exception as e:
+        db.session.rollback()
+        return {"success": False, "error": str(e)}
+

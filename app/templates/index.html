@@ -7,18 +7,76 @@
     <div class="col-lg-8 col-md-12">
         <h2 class="mb-3">
             <i class="fas fa-calendar-day d-md-none"></i>
-            今日排班 
-            <small class="text-muted d-block d-md-inline">{{ today.strftime('%Y年%m月%d日') }}</small>
+            {% if show_recent %}
+                最近排班
+                <small class="text-muted d-block d-md-inline">（今日無排班記錄）</small>
+            {% else %}
+                今日排班
+                <small class="text-muted d-block d-md-inline">{{ today.strftime('%Y年%m月%d日') }}</small>
+            {% endif %}
         </h2>
+        
+        <!-- 群組多選介面 -->
+        <div class="card mb-4">
+            <div class="card-header py-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0"><i class="fas fa-users me-2"></i>群組篩選</h6>
+                    <small class="text-muted" id="groupStatus">統籌組, 燈光組, 舞台組, 視聽組, 維護組 (5/5組)</small>
+                </div>
+            </div>
+            <div class="card-body py-3">
+                <div class="row g-2 mb-3">
+                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
+                        <button type="button" class="btn btn-outline-primary btn-sm w-100 group-btn active" data-group="coordination">
+                            <i class="fas fa-check me-1"></i>📊 統籌組
+                        </button>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
+                        <button type="button" class="btn btn-outline-warning btn-sm w-100 group-btn active" data-group="lighting">
+                            <i class="fas fa-check me-1"></i>💡 燈光組
+                        </button>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
+                        <button type="button" class="btn btn-outline-success btn-sm w-100 group-btn active" data-group="stage">
+                            <i class="fas fa-check me-1"></i>🎭 舞台組
+                        </button>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
+                        <button type="button" class="btn btn-outline-danger btn-sm w-100 group-btn active" data-group="audio">
+                            <i class="fas fa-check me-1"></i>🔊 視聽組
+                        </button>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
+                        <button type="button" class="btn btn-outline-secondary btn-sm w-100 group-btn active" data-group="maintenance">
+                            <i class="fas fa-check me-1"></i>🔧 維護組
+                        </button>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary btn-sm" id="selectAllGroups">
+                        <i class="fas fa-check-double me-1"></i>全選
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="resetGroups">
+                        <i class="fas fa-undo me-1"></i>重置
+                    </button>
+                </div>
+            </div>
+        </div>
+        
         {% if today_schedules %}
             <div class="row">
                 {% for schedule in today_schedules %}
                 <div class="col-lg-6 col-md-6 col-sm-12 mb-3">
-                    <div class="card h-100" style="border-left: 4px solid {{ schedule.shift_type.color }}">
+                    <div class="card h-100 employee-card" style="border-left: 4px solid {{ schedule.shift_type.color }}" data-employee-name="{{ schedule.employee.name }}">
                         <div class="card-body">
-                            <h5 class="card-title">{{ schedule.employee.name }}</h5>
+                            <h5 class="card-title">
+                                {{ schedule.employee.name }}
+                                {% if show_recent %}
+                                    <small class="text-muted d-block">{{ schedule.date.strftime('%m/%d') }}</small>
+                                {% endif %}
+                            </h5>
                             <p class="card-text">
-                                <span class="badge mb-2" style="background-color: {{ schedule.shift_type.color }}">
+                                <span class="badge badge-lg" style="background-color: {{ schedule.shift_type.color }}; font-size: 1.1em; padding: 8px 16px;">
                                     {{ schedule.shift_type.code }}
                                 </span>
                             </p>
@@ -133,9 +191,148 @@ function updateHomepageButtons() {
     }, 100);
 }
 
+// 群組多選功能
+let selectedGroups = new Set(['統籌組', '燈光組', '舞台組', '視聽組', '維護組']); // 預設全選
+let employeeGroups = {}; // 儲存員工群組歸屬
+
+const groupMapping = {
+    'coordination': '統籌組',
+    'lighting': '燈光組', 
+    'stage': '舞台組',
+    'audio': '視聽組',
+    'maintenance': '維護組'
+};
+
+async function loadEmployeeGroups() {
+    try {
+        const response = await fetch('/api/employee-groups');
+        const result = await response.json();
+        if (result.success) {
+            employeeGroups = result.data;
+            applyGroupFilter();
+        }
+    } catch (error) {
+        console.log('載入群組資料失敗:', error);
+        // 如果載入失敗，顯示所有員工
+        document.querySelectorAll('.employee-card').forEach(card => {
+            card.parentElement.style.display = 'block';
+        });
+    }
+}
+
+function toggleGroup(groupKey) {
+    const groupName = groupMapping[groupKey];
+    
+    if (selectedGroups.has(groupName)) {
+        selectedGroups.delete(groupName);
+    } else {
+        selectedGroups.add(groupName);
+    }
+    
+    // 確保至少選1組
+    if (selectedGroups.size === 0) {
+        selectedGroups.add('統籌組');
+    }
+    
+    updateGroupButtons();
+    updateGroupStatus();
+    applyGroupFilter();
+}
+
+function updateGroupButtons() {
+    document.querySelectorAll('.group-btn').forEach(btn => {
+        const groupKey = btn.dataset.group;
+        const groupName = groupMapping[groupKey];
+        const isSelected = selectedGroups.has(groupName);
+        
+        if (isSelected) {
+            btn.classList.add('active');
+            btn.classList.remove('btn-outline-primary', 'btn-outline-warning', 'btn-outline-success', 'btn-outline-danger', 'btn-outline-secondary');
+            // 設定對應的實心顏色
+            if (groupKey === 'coordination') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-primary';
+            else if (groupKey === 'lighting') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-warning';
+            else if (groupKey === 'stage') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-success';
+            else if (groupKey === 'audio') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-danger';
+            else if (groupKey === 'maintenance') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-secondary';
+            
+            btn.querySelector('i').className = 'fas fa-check me-1';
+        } else {
+            btn.classList.remove('active');
+            // 恢復outline樣式
+            btn.className = btn.className.replace(/btn-primary|btn-warning|btn-success|btn-danger|btn-secondary/g, '');
+            if (groupKey === 'coordination') btn.classList.add('btn-outline-primary');
+            else if (groupKey === 'lighting') btn.classList.add('btn-outline-warning');
+            else if (groupKey === 'stage') btn.classList.add('btn-outline-success');
+            else if (groupKey === 'audio') btn.classList.add('btn-outline-danger');
+            else if (groupKey === 'maintenance') btn.classList.add('btn-outline-secondary');
+            
+            btn.querySelector('i').className = 'fas fa-square me-1';
+        }
+    });
+}
+
+function updateGroupStatus() {
+    const groupNames = Array.from(selectedGroups).join(', ');
+    const count = selectedGroups.size;
+    document.getElementById('groupStatus').textContent = `${groupNames} (${count}/5組)`;
+}
+
+function applyGroupFilter() {
+    document.querySelectorAll('.employee-card').forEach(card => {
+        const employeeName = card.dataset.employeeName;
+        let shouldShow = false;
+        
+        // 檢查員工是否屬於任何選中的群組
+        const empGroups = employeeGroups[employeeName] || [];
+        for (let selectedGroup of selectedGroups) {
+            if (empGroups.includes(selectedGroup)) {
+                shouldShow = true;
+                break;
+            }
+        }
+        
+        // 如果員工沒有群組資料，預設顯示
+        if (empGroups.length === 0) {
+            shouldShow = true;
+        }
+        
+        card.parentElement.style.display = shouldShow ? 'block' : 'none';
+    });
+}
+
+function selectAllGroups() {
+    selectedGroups = new Set(['統籌組', '燈光組', '舞台組', '視聽組', '維護組']);
+    updateGroupButtons();
+    updateGroupStatus();
+    applyGroupFilter();
+}
+
+function resetGroups() {
+    selectedGroups = new Set(['統籌組']); // 重置為只選統籌組
+    updateGroupButtons();
+    updateGroupStatus();
+    applyGroupFilter();
+}
+
 // 頁面載入時檢查權限
 document.addEventListener('DOMContentLoaded', function() {
     updateHomepageButtons();
+    
+    // 初始化群組功能
+    loadEmployeeGroups();
+    updateGroupButtons();
+    updateGroupStatus();
+    
+    // 綁定群組按鈕事件
+    document.querySelectorAll('.group-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            toggleGroup(this.dataset.group);
+        });
+    });
+    
+    // 綁定全選和重置按鈕
+    document.getElementById('selectAllGroups').addEventListener('click', selectAllGroups);
+    document.getElementById('resetGroups').addEventListener('click', resetGroups);
     
     // 監聽認證狀態變化
     const originalUpdateNavigation = window.updateNavigation;

@@ -1,79 +1,116 @@
 {% extends "base.html" %}
 
-{% block title %}匯入 Excel - 班表管理系統{% endblock %}
+{% block title %}班表匯入 - 班表管理系統{% endblock %}
 
 {% block content %}
 <h2 class="mb-3">
     <i class="fas fa-upload d-md-none"></i>
-    匯入 Excel 班表
+    班表匯入
 </h2>
 
 <div class="row">
     <div class="col-lg-8 col-md-12 order-2 order-lg-1">
-        <div class="card">
+        <!-- CSV 檔案上傳 -->
+        <div class="card mb-4">
             <div class="card-header">
-                <h5><i class="fas fa-file-excel"></i> 上傳 Excel 檔案</h5>
+                <h5><i class="fas fa-file-csv"></i> 方法一：上傳 CSV 檔案</h5>
             </div>
             <div class="card-body">
-                {% if success %}
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="fas fa-check-circle me-2"></i>{{ success }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                <div id="upload-area" class="border-dashed p-4 text-center mb-3">
+                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                    <h6>拖拽檔案到此處或點擊選擇</h6>
+                    <input type="file" id="csv-file" accept=".csv" class="d-none">
+                    <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('csv-file').click()">
+                        <i class="fas fa-folder-open"></i> 選擇 CSV 檔案
+                    </button>
                 </div>
-                {% endif %}
-                
-                {% if error %}
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="fas fa-exclamation-circle me-2"></i>{{ error }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-                {% endif %}
-                
-                <form method="POST" enctype="multipart/form-data">
-                    <div class="mb-4">
-                        <label for="file" class="form-label">選擇 Excel 檔案</label>
-                        <input type="file" class="form-control form-control-lg" id="file" name="file" 
-                               accept=".xlsx,.xls" required>
-                        <div class="form-text">
-                            <i class="fas fa-info-circle"></i> 支援 .xlsx 和 .xls 格式
-                        </div>
-                    </div>
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-success btn-lg">
-                            <i class="fas fa-upload me-2"></i> 上傳並匯入
-                        </button>
-                    </div>
-                </form>
             </div>
         </div>
+
+        <!-- 貼上班表資料 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-paste"></i> 方法二：貼上班表資料</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">從 Excel 或 Google Sheet 複製資料後貼上：</p>
+                <textarea id="paste-area" class="form-control" rows="8" 
+                         placeholder="姓名,員工代碼,年月,日期,班別&#10;張三,A001,2024-07,1,A&#10;張三,A001,2024-07,2,B&#10;張三,A001,2024-07,3,OFF"></textarea>
+                <div class="mt-3">
+                    <button type="button" class="btn btn-primary" onclick="processPastedData()">
+                        <i class="fas fa-check"></i> 預覽資料
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary ms-2" onclick="clearPasteArea()">
+                        <i class="fas fa-trash"></i> 清除
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 預覽區域 -->
+        <div id="preview-section" class="card d-none">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5><i class="fas fa-eye"></i> 資料預覽</h5>
+                <div id="preview-stats" class="text-muted"></div>
+            </div>
+            <div class="card-body">
+                <!-- 年月分佈 -->
+                <div id="month-distribution" class="mb-3"></div>
+                
+                <!-- 錯誤訊息 -->
+                <div id="error-messages" class="alert alert-warning d-none"></div>
+                
+                <!-- 預覽表格 -->
+                <div id="preview-table" class="table-responsive mb-3"></div>
+                
+                <!-- 匯入控制 -->
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <button type="button" class="btn btn-success" onclick="importData()">
+                            <i class="fas fa-download"></i> 匯入選定資料
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary ms-2" onclick="hidePreview()">
+                            <i class="fas fa-times"></i> 取消
+                        </button>
+                    </div>
+                    <div id="import-progress" class="d-none">
+                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                        正在匯入...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 結果顯示 -->
+        <div id="result-section" class="alert d-none"></div>
     </div>
     
     <div class="col-lg-4 col-md-12 order-1 order-lg-2 mb-3 mb-lg-0">
+        <!-- 格式要求 -->
         <div class="card">
             <div class="card-header">
-                <h5>Excel 格式要求</h5>
+                <h5>CSV 格式規範</h5>
             </div>
             <div class="card-body">
                 <p><strong>必要欄位：</strong></p>
                 <ul>
-                    <li><code>姓名</code> 或 <code>員工姓名</code></li>
-                    <li><code>日期</code></li>
-                    <li><code>班別</code> 或 <code>班次</code></li>
+                    <li><code>姓名</code> - 員工姓名</li>
+                    <li><code>員工代碼</code> - 員工編號</li>
+                    <li><code>年月</code> - 如 2024-07</li>
+                    <li><code>日期</code> - 如 1、2、3</li>
+                    <li><code>班別</code> - 班別代碼</li>
                 </ul>
                 
-                <p><strong>班別代號：</strong></p>
-                <ul>
-                    <li>A - 早班 (08:00-16:00)</li>
-                    <li>B - 中班 (16:00-00:00)</li>
-                    <li>C - 晚班 (00:00-08:00)</li>
-                    <li>OFF - 休假</li>
-                </ul>
-                
-                <p><strong>日期格式：</strong></p>
-                <ul>
-                    <li>YYYY-MM-DD (如：2024-01-15)</li>
-                    <li>或 Excel 日期格式</li>
-                </ul>
+                <p><strong>班別代碼：</strong></p>
+                <div class="small">
+                    <span class="badge bg-success me-1">A</span>
+                    <span class="badge bg-warning me-1">B</span>
+                    <span class="badge bg-danger me-1">C</span>
+                    <span class="badge bg-secondary me-1">OFF</span>
+                    <span class="badge bg-info me-1">FC</span>
+                    <span class="badge bg-primary me-1">P1c</span>
+                    等...
+                </div>
             </div>
         </div>
         
@@ -87,6 +124,8 @@
                         <thead>
                             <tr>
                                 <th>姓名</th>
+                                <th>員工代碼</th>
+                                <th>年月</th>
                                 <th>日期</th>
                                 <th>班別</th>
                             </tr>
@@ -94,17 +133,23 @@
                         <tbody>
                             <tr>
                                 <td>張三</td>
-                                <td>2024-01-15</td>
+                                <td>A001</td>
+                                <td>2024-07</td>
+                                <td>1</td>
                                 <td>A</td>
                             </tr>
                             <tr>
-                                <td>李四</td>
-                                <td>2024-01-15</td>
+                                <td>張三</td>
+                                <td>A001</td>
+                                <td>2024-07</td>
+                                <td>2</td>
                                 <td>B</td>
                             </tr>
                             <tr>
-                                <td>王五</td>
-                                <td>2024-01-15</td>
+                                <td>李四</td>
+                                <td>B002</td>
+                                <td>2024-07</td>
+                                <td>1</td>
                                 <td>OFF</td>
                             </tr>
                         </tbody>
@@ -112,20 +157,243 @@
                 </div>
             </div>
         </div>
-    </div>
-</div>
 
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="alert alert-info">
-            <h6><i class="fas fa-info-circle"></i> 匯入說明</h6>
-            <ul class="mb-0">
-                <li>系統會自動建立新員工（如果不存在）</li>
-                <li>系統會自動建立新班別（如果不存在）</li>
-                <li>重複的排班記錄會被忽略</li>
-                <li>匯入完成後會自動跳轉到日曆檢視</li>
-            </ul>
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>功能特色</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> 即時資料預覽</li>
+                    <li><i class="fas fa-check text-success"></i> 年月分佈分析</li>
+                    <li><i class="fas fa-check text-success"></i> 選擇性月份匯入</li>
+                    <li><i class="fas fa-check text-success"></i> 自動建立員工與班別</li>
+                    <li><i class="fas fa-check text-success"></i> 重複資料智能處理</li>
+                </ul>
+            </div>
         </div>
     </div>
 </div>
+
+<style>
+.border-dashed {
+    border: 2px dashed #dee2e6;
+    border-radius: 0.375rem;
+    transition: border-color 0.15s ease-in-out;
+}
+.border-dashed:hover {
+    border-color: #0d6efd;
+}
+.month-badge {
+    margin: 2px;
+    cursor: pointer;
+}
+.month-badge.selected {
+    background-color: #0d6efd !important;
+}
+</style>
+
+<script>
+let currentData = null;
+let selectedMonths = [];
+
+// 檔案上傳處理
+document.getElementById('csv-file').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        fetch('/upload_csv', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                showError(data.error);
+            } else {
+                showPreview(data);
+            }
+        })
+        .catch(error => {
+            showError('檔案處理錯誤: ' + error.message);
+        });
+    }
+});
+
+// 貼上資料處理
+function processPastedData() {
+    const csvText = document.getElementById('paste-area').value.trim();
+    if (!csvText) {
+        showError('請輸入資料');
+        return;
+    }
+    
+    fetch('/upload_pasted', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({csv_data: csvText})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            showError(data.error);
+        } else {
+            showPreview(data);
+        }
+    })
+    .catch(error => {
+        showError('資料處理錯誤: ' + error.message);
+    });
+}
+
+// 顯示預覽
+function showPreview(data) {
+    currentData = data.preview_data;
+    selectedMonths = Object.keys(data.month_distribution);
+    
+    // 更新統計
+    document.getElementById('preview-stats').textContent = 
+        `總計 ${data.total_records} 筆資料，預覽前 50 筆`;
+    
+    // 顯示年月分佈
+    const monthHtml = Object.entries(data.month_distribution)
+        .map(([month, count]) => 
+            `<span class="badge bg-primary month-badge selected" onclick="toggleMonth('${month}')">${month} (${count}筆)</span>`
+        ).join(' ');
+    document.getElementById('month-distribution').innerHTML = 
+        '<strong>年月分佈：</strong><br>' + monthHtml;
+    
+    // 顯示錯誤訊息
+    if (data.errors && data.errors.length > 0) {
+        document.getElementById('error-messages').classList.remove('d-none');
+        document.getElementById('error-messages').innerHTML = 
+            '<strong>發現問題：</strong><ul>' + 
+            data.errors.map(error => `<li>${error}</li>`).join('') + 
+            '</ul>';
+    } else {
+        document.getElementById('error-messages').classList.add('d-none');
+    }
+    
+    // 顯示預覽表格
+    const tableHtml = `
+        <table class="table table-sm table-bordered">
+            <thead>
+                <tr>
+                    <th>姓名</th>
+                    <th>員工代碼</th>
+                    <th>年月</th>
+                    <th>日期</th>
+                    <th>班別</th>
+                    <th>完整日期</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${data.preview_data.map(row => 
+                    `<tr>
+                        <td>${row.姓名}</td>
+                        <td>${row.員工代碼}</td>
+                        <td>${row.年月}</td>
+                        <td>${row.日期}</td>
+                        <td><span class="badge bg-info">${row.班別}</span></td>
+                        <td>${row.完整日期}</td>
+                    </tr>`
+                ).join('')}
+            </tbody>
+        </table>
+    `;
+    document.getElementById('preview-table').innerHTML = tableHtml;
+    
+    // 顯示預覽區域
+    document.getElementById('preview-section').classList.remove('d-none');
+    hideResult();
+}
+
+// 切換月份選擇
+function toggleMonth(month) {
+    const badge = event.target;
+    if (selectedMonths.includes(month)) {
+        selectedMonths = selectedMonths.filter(m => m !== month);
+        badge.classList.remove('selected', 'bg-primary');
+        badge.classList.add('bg-secondary');
+    } else {
+        selectedMonths.push(month);
+        badge.classList.remove('bg-secondary');
+        badge.classList.add('selected', 'bg-primary');
+    }
+}
+
+// 匯入資料
+function importData() {
+    if (!currentData) {
+        showError('沒有資料可匯入');
+        return;
+    }
+    
+    document.getElementById('import-progress').classList.remove('d-none');
+    
+    fetch('/import_data', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            data: currentData,
+            selected_months: selectedMonths
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById('import-progress').classList.add('d-none');
+        
+        if (data.success) {
+            showSuccess(`匯入成功！新增 ${data.imported_count} 筆，更新 ${data.updated_count} 筆`);
+            hidePreview();
+            clearPasteArea();
+        } else {
+            showError('匯入失敗: ' + data.error);
+        }
+    })
+    .catch(error => {
+        document.getElementById('import-progress').classList.add('d-none');
+        showError('匯入錯誤: ' + error.message);
+    });
+}
+
+// 隱藏預覽
+function hidePreview() {
+    document.getElementById('preview-section').classList.add('d-none');
+    currentData = null;
+    selectedMonths = [];
+}
+
+// 清除貼上區域
+function clearPasteArea() {
+    document.getElementById('paste-area').value = '';
+}
+
+// 顯示錯誤
+function showError(message) {
+    const resultSection = document.getElementById('result-section');
+    resultSection.className = 'alert alert-danger';
+    resultSection.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+    resultSection.classList.remove('d-none');
+}
+
+// 顯示成功
+function showSuccess(message) {
+    const resultSection = document.getElementById('result-section');
+    resultSection.className = 'alert alert-success';
+    resultSection.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+    resultSection.classList.remove('d-none');
+}
+
+// 隱藏結果
+function hideResult() {
+    document.getElementById('result-section').classList.add('d-none');
+}
+</script>
 {% endblock %}
