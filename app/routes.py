@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for, g, flash, session
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for, g, flash, session, Response
 from app.models import db, Employee, ShiftType, Schedule, User, ImportLog, GroupMembers
 from app.auth_middleware import require_auth, require_admin, optional_auth, get_current_user
 from datetime import datetime, date
@@ -17,6 +17,9 @@ main = Blueprint('main', __name__)
 @require_auth
 def index():
     current_user = get_current_user()
+    
+    # 強制提交任何待處理的資料庫變更
+    db.session.commit()
     
     today = date.today()
     
@@ -41,41 +44,6 @@ def index():
     
     return render_template('index.html', today_schedules=today_schedules, today=today, show_recent=False)
 
-@main.route('/employees', methods=['GET', 'POST'])
-@require_auth
-def employees():
-    if request.method == 'POST':
-        # 處理新增員工
-        try:
-            name = request.form.get('name', '').strip()
-            employee_code = request.form.get('employee_code', '').strip()
-            
-            if not name or not employee_code:
-                flash('請填寫完整的員工資料', 'error')
-                return redirect(url_for('main.employees'))
-            
-            # 檢查員工代號是否已存在
-            existing_employee = Employee.query.filter_by(employee_code=employee_code).first()
-            if existing_employee:
-                flash('員工代號已存在', 'error')
-                return redirect(url_for('main.employees'))
-            
-            # 創建新員工
-            new_employee = Employee(name=name, employee_code=employee_code)
-            db.session.add(new_employee)
-            db.session.commit()
-            
-            flash(f'員工 {name} 新增成功', 'success')
-            return redirect(url_for('main.employees'))
-            
-        except Exception as e:
-            db.session.rollback()
-            flash('新增員工失敗，請稍後再試', 'error')
-            return redirect(url_for('main.employees'))
-    
-    # GET 請求：顯示員工列表 - 顯示所有員工，不論是否有排班記錄
-    all_employees = Employee.query.order_by(Employee.name).all()
-    return render_template('employees.html', employees=all_employees)
 
 @main.route('/calendar')
 @require_auth
@@ -211,29 +179,152 @@ def api_query_shift():
 
 
 
-@main.route('/api/employees')
-def api_employees():
-    search_term = request.args.get('q', '').strip()
-    
-    # 搜尋有班表資料的員工
-    query = Employee.query.join(Schedule).distinct()
-    
-    if search_term:
-        query = query.filter(
-            (Employee.name.contains(search_term)) |
-            (Employee.employee_code.contains(search_term))
-        )
-    
-    employees = query.limit(20).all()
-    
-    result = [{'id': emp.id, 'name': emp.name, 'code': emp.employee_code} for emp in employees]
-    return jsonify(result)
 
 @main.route('/api/shift_types')
 def api_shift_types():
     shift_types = ShiftType.query.all()
     result = [{'code': st.code, 'name': st.name, 'color': st.color} for st in shift_types]
     return jsonify(result)
+
+@main.route('/api/export_ics')
+def api_export_ics():
+    """匯出指定員工的月度班表為ICS日曆檔案"""
+    try:
+        # 取得查詢參數
+        search_query = request.args.get('query', '').strip()
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+        
+        if not search_query:
+            return jsonify({'error': '請輸入員工姓名或工號'}), 400
+            
+        if not year or not month:
+            return jsonify({'error': '請選擇年月'}), 400
+            
+        # 確保測試員工存在（與preview_schedule相同邏輯）
+        from app.models import db
+        employee_data = [
+            ('賴 秉 宏', '8652'),
+            ('李 惟 綱', '8312'), 
+            ('李 家 瑋', '8512'),
+            ('王 志 忠', '0450'),
+            ('顧 育 禎', '8672'),
+            ('胡 翊 潔', '8619'),
+            ('朱 家 德', '8835')
+        ]
+        
+        # 每次請求時確保員工存在（記憶體資料庫需要）
+        for name, code in employee_data:
+            employee = Employee.query.filter_by(name=name).first()
+            if not employee:
+                employee = Employee(name=name, employee_code=code)
+                db.session.add(employee)
+        db.session.commit()
+        
+        # 搜尋員工（與preview_schedule相同邏輯）
+        employee = Employee.query.filter(
+            Employee.name.like(f'%{search_query}%')
+        ).first()
+        
+        # 如果模糊搜尋找不到，嘗試精確匹配
+        if not employee:
+            employee = Employee.query.filter_by(name=search_query).first()
+        
+        # 如果還是找不到，嘗試移除空格的匹配
+        if not employee:
+            search_no_space = search_query.replace(' ', '')
+            for emp in Employee.query.all():
+                if emp.name.replace(' ', '') == search_no_space:
+                    employee = emp
+                    break
+        
+        if not employee:
+            return jsonify({'error': f'找不到員工: {search_query}'}), 404
+            
+        # 取得該員工的月度排班資料
+        from datetime import date, datetime, time
+        import calendar
+        
+        start_date = date(year, month, 1)
+        last_day = calendar.monthrange(year, month)[1]
+        end_date = date(year, month, last_day)
+        
+        schedules = Schedule.query.filter(
+            Schedule.employee_id == employee.id,
+            Schedule.date >= start_date,
+            Schedule.date <= end_date
+        ).order_by(Schedule.date.asc()).all()
+        
+        # 生成ICS內容
+        ics_content = generate_ics_content(employee, schedules, year, month)
+        
+        # 創建響應，避免中文檔名編碼問題
+        import urllib.parse
+        filename = f"{employee.name}_{year}年{month:02d}月_班表.ics"
+        encoded_filename = urllib.parse.quote(filename.encode('utf-8'))
+        
+        response = Response(
+            ics_content,
+            mimetype='text/calendar',
+            headers={
+                'Content-Disposition': f'attachment; filename*=UTF-8\'\'{encoded_filename}'
+            }
+        )
+        
+        return response
+        
+    except Exception as e:
+        print(f'ICS匯出錯誤: {e}')
+        return jsonify({'error': f'匯出失敗: {str(e)}'}), 500
+
+def generate_ics_content(employee, schedules, year, month):
+    """根據Google日曆規範生成ICS檔案內容"""
+    from datetime import datetime, time
+    
+    # 按Google日曆規範設定ICS檔案標頭
+    ics_lines = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//My Calendar Generator//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        f'X-WR-CALNAME:{employee.name}的班表',
+        'X-WR-TIMEZONE:Asia/Taipei'
+    ]
+    
+    # 處理所有班別，包含休假班別
+    for schedule in schedules:
+        
+        # 取得班別的實際工作時間
+        actual_start = schedule.shift_type.start_time or time(9, 0)
+        actual_end = schedule.shift_type.end_time or time(18, 0)
+        
+        # 按Google日曆規範：所有事件統一設為09:00-09:05
+        event_start = datetime.combine(schedule.date, time(9, 0))
+        event_end = datetime.combine(schedule.date, time(9, 5))
+        
+        # 格式化為ICS時間格式
+        dtstart = event_start.strftime('%Y%m%dT%H%M%S')
+        dtend = event_end.strftime('%Y%m%dT%H%M%S')
+        
+        # 建立班別標題，只顯示班別代碼
+        summary = f'{schedule.shift_type.code}'
+        
+        # 按照Google日曆規範的簡化格式創建事件
+        event_lines = [
+            'BEGIN:VEVENT',
+            f'DTSTART:{dtstart}',
+            f'DTEND:{dtend}',
+            f'SUMMARY:{summary}',
+            'END:VEVENT'
+        ]
+        
+        ics_lines.extend(event_lines)
+    
+    # ICS檔案結尾
+    ics_lines.append('END:VCALENDAR')
+    
+    return '\r\n'.join(ics_lines)
 
 @main.route('/api/date_range')
 def api_date_range():
@@ -326,20 +417,66 @@ def api_preview_schedule():
                 db.session.add(employee)
         db.session.commit()
         
-        # 搜尋員工（支援姓名模糊搜尋和完整姓名）
-        employee = Employee.query.filter(
-            Employee.name.like(f'%{search_query}%')
-        ).first()
+        # 增強的員工搜尋邏輯（支援多種模糊匹配）
+        employee = None
         
-        # 如果模糊搜尋找不到，嘗試精確匹配
+        # 1. 先嘗試員工代碼完全匹配
+        employee = Employee.query.filter_by(employee_code=search_query).first()
+        
+        # 2. 嘗試員工代碼部分匹配
+        if not employee:
+            employee = Employee.query.filter(
+                Employee.employee_code.like(f'%{search_query}%')
+            ).first()
+        
+        # 3. 嘗試姓名完全匹配
         if not employee:
             employee = Employee.query.filter_by(name=search_query).first()
         
-        # 如果還是找不到，嘗試移除空格的匹配
+        # 4. 對於短查詢字串（1-2個字），直接進入多員工匹配邏輯
+        if not employee and len(search_query.replace(' ', '')) <= 2:
+            search_clean = search_query.replace(' ', '')
+            matching_employees = []
+            for emp in Employee.query.all():
+                emp_name_clean = emp.name.replace(' ', '')
+                # 支援輸入「李」找到所有姓李的員工
+                if search_clean in emp_name_clean:
+                    matching_employees.append(emp)
+            
+            # 如果找到多個匹配員工，返回選擇列表讓用戶選擇
+            if len(matching_employees) > 1:
+                matching_employees.sort(key=lambda e: e.employee_code)
+                employee_choices = []
+                for emp in matching_employees:
+                    employee_choices.append({
+                        'employee_code': emp.employee_code,
+                        'name': emp.name,
+                        'id': emp.id
+                    })
+                return jsonify({
+                    'multiple_matches': True,
+                    'choices': employee_choices,
+                    'query': search_query
+                })
+            elif len(matching_employees) == 1:
+                employee = matching_employees[0]
+        
+        # 5. 嘗試姓名模糊搜尋（包含查詢字串）- 僅限於較長的查詢字串
+        if not employee and len(search_query.replace(' ', '')) > 2:
+            employee = Employee.query.filter(
+                Employee.name.like(f'%{search_query}%')
+            ).first()
+        
+        # 6. 移除空格後的匹配（處理空格問題）
         if not employee:
             search_no_space = search_query.replace(' ', '')
             for emp in Employee.query.all():
+                # 姓名移除空格比對
                 if emp.name.replace(' ', '') == search_no_space:
+                    employee = emp
+                    break
+                # 員工代碼移除空格比對
+                if emp.employee_code.replace(' ', '') == search_no_space:
                     employee = emp
                     break
         
@@ -392,6 +529,68 @@ def api_preview_schedule():
         
     except Exception as e:
         print(f'預覽API錯誤: {e}')
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/preview_schedule_by_id')
+def api_preview_schedule_by_id():
+    """根據員工ID直接預覽班表（用於用戶選擇特定員工後）"""
+    try:
+        employee_id = request.args.get('employee_id')
+        year = int(request.args.get('year'))
+        month = int(request.args.get('month'))
+        
+        if not employee_id:
+            return jsonify({'error': '缺少員工ID'}), 400
+        
+        # 直接根據ID查找員工
+        employee = Employee.query.get(employee_id)
+        if not employee:
+            return jsonify({'error': f'找不到員工ID: {employee_id}'}), 404
+        
+        # 取得該員工的月度排班資料
+        from datetime import date
+        import calendar
+        
+        # 生成指定月份的所有日期
+        year_month = date(year, month, 1)
+        days_in_month = calendar.monthrange(year, month)[1]
+        
+        schedules = Schedule.query.filter(
+            Schedule.employee_id == employee.id,
+            db.extract('year', Schedule.date) == year,
+            db.extract('month', Schedule.date) == month
+        ).all()
+        
+        # 將排班資料轉換為字典格式，方便前端處理
+        schedule_dict = {schedule.date.day: schedule for schedule in schedules}
+        
+        # 生成月曆結構
+        cal = calendar.monthcalendar(year, month)
+        
+        # 準備返回的排班資料
+        schedule_data = []
+        for schedule in schedules:
+            # 透過關聯獲取班別類型資料
+            shift_type = schedule.shift_type
+            schedule_data.append({
+                'date': schedule.date.strftime('%Y-%m-%d'),
+                'shift_code': shift_type.code if shift_type else 'UNKNOWN',
+                'shift_name': shift_type.name if shift_type else 'Unknown Shift'
+            })
+        
+        return jsonify({
+            'employee': {
+                'name': employee.name,
+                'employee_code': employee.employee_code
+            },
+            'year': year,
+            'month': month,
+            'calendar': cal,
+            'schedules': schedule_data
+        })
+        
+    except Exception as e:
+        print(f'按ID預覽API錯誤: {e}')
         return jsonify({'error': str(e)}), 500
 
 @main.route('/api/export_monthly_schedule')
@@ -556,12 +755,17 @@ def api_export_monthly_schedule():
         # 取得該員工使用的班別類型
         used_shift_types = set()
         for schedule in schedules:
-            used_shift_types.add((schedule.shift_type.code, schedule.shift_type.name))
+            used_shift_types.add((schedule.shift_type.code, schedule.shift_type.color))
         
         legend_row = legend_start_row + 1
-        for i, (code, name) in enumerate(sorted(used_shift_types)):
-            legend_cell = ws.cell(row=legend_row + i, column=1, value=f'{code}: {name}')
+        for i, (code, color) in enumerate(sorted(used_shift_types)):
+            legend_cell = ws.cell(row=legend_row + i, column=1, value=f'{code}: {code}')
             legend_cell.font = Font(name='微軟正黑體', size=10)
+            # 設定背景色與班別顏色相同
+            if color and color.startswith('#'):
+                # 移除#號並轉為大寫
+                hex_color = color[1:].upper()
+                legend_cell.fill = PatternFill(start_color=hex_color, end_color=hex_color, fill_type='solid')
         
         # 保存到BytesIO
         output = BytesIO()
@@ -749,8 +953,12 @@ def upload_excel():
     return render_template('upload.html')
 
 def get_shift_info(shift_code):
-    """根據班別代碼返回班別資訊"""
+    """根據班別代碼返回班別資訊，支援複合格式和未排班狀態"""
     from datetime import time
+    
+    # 特殊狀態：未排班
+    if shift_code == 'UNASSIGNED':
+        return '未排班', time(0, 0), time(0, 0), '#9ca3af'
     
     # 休假相關
     if shift_code in ['H0', 'H1', 'H2']:
@@ -759,34 +967,47 @@ def get_shift_info(shift_code):
     # 正常班別
     elif shift_code == 'FC':
         return 'FC班', time(9, 0), time(18, 0), '#007bff'
-    
-    # P班系列
-    elif shift_code.startswith('P1'):
-        return f'P1班({shift_code})', time(8, 0), time(17, 0), '#28a745'
-    elif shift_code.startswith('P2'):
-        return f'P2班({shift_code})', time(14, 0), time(23, 0), '#ffc107'
-    elif shift_code.startswith('P3'):
-        return f'P3班({shift_code})', time(17, 0), time(2, 0), '#fd7e14'
-    elif shift_code.startswith('P4'):
-        return f'P4班({shift_code})', time(20, 0), time(5, 0), '#dc3545'
-    elif shift_code.startswith('P5'):
-        return f'P5班({shift_code})', time(22, 0), time(7, 0), '#6f42c1'
-    
-    # 其他班別
-    elif shift_code.startswith('N'):
-        return f'N班({shift_code})', time(19, 0), time(4, 0), '#20c997'
-    elif shift_code.startswith('E'):
-        return f'E班({shift_code})', time(7, 0), time(16, 0), '#17a2b8'
-    elif shift_code.startswith('C'):
-        return f'C班({shift_code})', time(16, 0), time(1, 0), '#e83e8c'
-    elif shift_code.startswith('R'):
-        return f'R班({shift_code})', time(12, 0), time(21, 0), '#6610f2'
-    elif shift_code in ['NT', 'CH']:
-        return f'{shift_code}班', time(9, 0), time(18, 0), '#343a40'
     elif shift_code == 'FX':
         return 'FX班', time(10, 0), time(19, 0), '#495057'
     
-    # 其他特殊班別
+    # 處理複合班別（如 P1c/工程, P4p/ME 等）
+    base_code = shift_code.split('/')[0] if '/' in shift_code else shift_code
+    suffix = shift_code.split('/')[1] if '/' in shift_code else ''
+    
+    # P班系列（根據基礎代碼判斷時間）
+    if base_code.startswith('P1'):
+        name = f'{shift_code}班' if '/' in shift_code else f'P1班({shift_code})'
+        return name, time(8, 0), time(17, 0), '#28a745'
+    elif base_code.startswith('P2'):
+        name = f'{shift_code}班' if '/' in shift_code else f'P2班({shift_code})'
+        return name, time(14, 0), time(23, 0), '#ffc107'
+    elif base_code.startswith('P3'):
+        name = f'{shift_code}班' if '/' in shift_code else f'P3班({shift_code})'
+        return name, time(17, 0), time(2, 0), '#fd7e14'
+    elif base_code.startswith('P4'):
+        name = f'{shift_code}班' if '/' in shift_code else f'P4班({shift_code})'
+        return name, time(20, 0), time(5, 0), '#dc3545'
+    elif base_code.startswith('P5'):
+        name = f'{shift_code}班' if '/' in shift_code else f'P5班({shift_code})'
+        return name, time(22, 0), time(7, 0), '#6f42c1'
+    
+    # 其他班別系列
+    elif base_code.startswith('N'):
+        return f'{shift_code}班', time(19, 0), time(4, 0), '#20c997'
+    elif base_code.startswith('E'):
+        return f'{shift_code}班', time(7, 0), time(16, 0), '#17a2b8'
+    elif base_code.startswith('C'):
+        return f'{shift_code}班', time(16, 0), time(1, 0), '#e83e8c'
+    elif base_code.startswith('R'):
+        return f'{shift_code}班', time(12, 0), time(21, 0), '#6610f2'
+    elif shift_code in ['NT', 'CH']:
+        return f'{shift_code}班', time(9, 0), time(18, 0), '#343a40'
+    
+    # 特殊格式處理（如 FC/前製）
+    elif base_code == 'FC' and suffix:
+        return f'FC班/{suffix}', time(9, 0), time(18, 0), '#007bff'
+    
+    # 其他未知班別（強制匯入時可能產生）
     else:
         return f'{shift_code}班', time(9, 0), time(18, 0), '#868e96'
 
@@ -1002,7 +1223,47 @@ def upload_new():
     
     # GET請求：顯示匯入頁面
     recent_imports = ImportLog.query.order_by(ImportLog.import_time.desc()).limit(5).all()
-    return render_template('upload_new.html', recent_imports=recent_imports)
+    
+    # 添加當前班表統計資料
+    from datetime import date, datetime, timedelta
+    today = date.today()
+    
+    # 統計當前資料庫中的班表資料
+    total_schedules = Schedule.query.count()
+    total_employees = Employee.query.count()
+    
+    # 查找最近的排班資料範圍
+    latest_schedule = Schedule.query.order_by(Schedule.date.desc()).first()
+    earliest_schedule = Schedule.query.order_by(Schedule.date.asc()).first()
+    
+    # 今日排班統計
+    today_schedules_count = Schedule.query.filter(Schedule.date == today).count()
+    
+    # 本月排班統計
+    month_start = date(today.year, today.month, 1)
+    if today.month == 12:
+        month_end = date(today.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        month_end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+    
+    month_schedules_count = Schedule.query.filter(
+        Schedule.date >= month_start,
+        Schedule.date <= month_end
+    ).count()
+    
+    current_stats = {
+        'total_schedules': total_schedules,
+        'total_employees': total_employees,
+        'today_schedules': today_schedules_count,
+        'month_schedules': month_schedules_count,
+        'latest_date': latest_schedule.date if latest_schedule else None,
+        'earliest_date': earliest_schedule.date if earliest_schedule else None,
+        'today': today
+    }
+    
+    return render_template('upload_new.html', 
+                         recent_imports=recent_imports, 
+                         current_stats=current_stats)
 
 def handle_excel_upload():
     """處理Excel檔案上傳和驗證"""
@@ -1760,39 +2021,168 @@ def create_preview_data_v11(df, target_group, whitelist_data):
     
     return preview_data
 
+def normalize_shift_code(shift_code):
+    """標準化班別代號，自動轉換含有說明的班別"""
+    if not shift_code or pd.isna(shift_code) or str(shift_code).strip() == '':
+        return ''
+    
+    shift_code = str(shift_code).strip()
+    
+    # 處理空值和無效值
+    if shift_code in ['nan', 'NaN', 'None', 'null', '']:
+        return ''
+    
+    # 映射表：將含有斜線的班別轉換為基本班別
+    shift_mapping = {
+        'FC/急救課': 'FC',
+        'FC/保養': 'FC', 
+        'FC/早上公假': 'FC',
+        'FC/工程': 'FC',
+        'FC/E1': 'FC',
+        'FC/PM': 'FC',
+        'P3n/夜超': 'P3n',
+        'P1n/夜超': 'P1n',
+        'P1n/LED': 'P1n',
+        'P3c/保養': 'P3c',
+        'P1p/保養': 'P1p',
+        'P4p/保養': 'P4p',
+        'CH/FC': 'FC',
+        'CH/FC*': 'FC'
+    }
+    
+    # 先檢查直接映射
+    if shift_code in shift_mapping:
+        return shift_mapping[shift_code]
+    
+    # 如果包含斜線，取斜線前的部分
+    if '/' in shift_code:
+        base_shift = shift_code.split('/')[0].strip()
+        # 驗證基本班別是否有效
+        valid_base_shifts = ['FC', 'P3n', 'P3c', 'P1p', 'P4p', 'P1n', 'P2n', 'P2p', 'P2s', 'P3p', 'P4n', 'CH']
+        if base_shift in valid_base_shifts:
+            return base_shift
+    
+    return shift_code
+
 def validate_shift_count_equality(df):
-    """驗證每個人的班數是否相等"""
+    """驗證每個人的班數是否相等 - 按照新邏輯：有班就算，包含H0/H1"""
     validation_results = {
         'is_valid': True,
         'errors': [],
         'warnings': [],
         'statistics': {},
-        'uneven_distribution': []
+        'uneven_distribution': [],
+        'duplicate_records': [],
+        'part_time_employees': []
     }
     
     try:
-        # 統計每個人的班數 (排除休假 H0, H1)
+        # 統計每個人的班數 - 有班就算（包含H0, H1）
         person_shift_counts = {}
+        person_daily_shifts = {}  # 記錄每個人每天的班別
         
-        # 智能識別姓名和班別欄位
+        # 智能識別姓名、班別和日期欄位
         columns_info = identify_columns(df)
         name_col = columns_info.get('name_col')
         shift_col = columns_info.get('shift_col')
+        
+        # 嘗試識別日期欄位
+        date_col = None
+        for col in df.columns:
+            if '日期' in str(col) or 'day' in str(col).lower():
+                date_col = col
+                break
         
         if not name_col or not shift_col:
             validation_results['is_valid'] = False
             validation_results['errors'].append('無法識別姓名或班別欄位')
             return validation_results
         
-        for _, row in df.iterrows():
+        # 第一階段：收集所有班別資料
+        for index, row in df.iterrows():
             name = str(row[name_col]).strip()
-            shift = str(row[shift_col]).strip()
+            original_shift = str(row[shift_col]).strip()
             
-            # 排除休假班別和空值
-            if shift not in ['H0', 'H1', '', 'nan', 'NaN'] and name not in ['', 'nan', 'NaN']:
-                if name not in person_shift_counts:
-                    person_shift_counts[name] = 0
-                person_shift_counts[name] += 1
+            # 跳過標題行和模板行
+            if name in ['姓名', '年月', '組室別', '員工代碼', '', 'nan', 'NaN']:
+                continue
+            
+            # 跳過純數字（日期模板）
+            if name.isdigit():
+                continue
+            
+            # 跳過長度異常的姓名
+            if len(name) < 2 or len(name) > 15:
+                continue
+            
+            # 獲取日期資訊
+            date_info = ''
+            if date_col and pd.notna(row[date_col]):
+                date_info = str(row[date_col]).strip()
+            
+            # 處理班別（清理換行符號和額外資訊）
+            shift = original_shift
+            if shift:
+                # 清理換行符號和多餘空白
+                shift = shift.replace('\n', '').replace('\r', '').strip()
+                # 如果包含時間資訊（如 P4n\n13-22），只取班別部分
+                if '\n' in original_shift or any(char in shift for char in ['09-', '13-', '17-']):
+                    # 提取班別代號（通常在最前面）
+                    shift_parts = shift.split()
+                    if shift_parts:
+                        shift = shift_parts[0]
+            
+            # 空白班別視為非全職人員，記錄但不計算班數
+            if not shift or shift in ['', 'nan', 'NaN', 'None', 'null']:
+                if name not in validation_results['part_time_employees']:
+                    validation_results['part_time_employees'].append(name)
+                continue
+            
+            # 記錄每個人每天的班別
+            person_date_key = f"{name}_{date_info}"
+            if person_date_key not in person_daily_shifts:
+                person_daily_shifts[person_date_key] = {
+                    'name': name,
+                    'date': date_info,
+                    'shifts': [],
+                    'line': index + 1
+                }
+            person_daily_shifts[person_date_key]['shifts'].append(shift)
+        
+        # 第二階段：處理合併班別和重複記錄
+        for person_date_key, daily_data in person_daily_shifts.items():
+            name = daily_data['name']
+            date = daily_data['date']
+            shifts = daily_data['shifts']
+            
+            # 去除重複的班別，保持順序
+            unique_shifts = []
+            for shift in shifts:
+                if shift not in unique_shifts:
+                    unique_shifts.append(shift)
+            
+            # 如果同一天有多個不同班別，合併為 班別A/班別B 格式
+            if len(shifts) > 1:
+                if len(unique_shifts) > 1:
+                    # 不同班別：顯示警告並合併
+                    merged_shift = '/'.join(unique_shifts)
+                    validation_results['warnings'].append(
+                        f"{name} 在 {date} 有多個班別：{merged_shift}"
+                    )
+                else:
+                    # 相同班別重複：顯示錯誤
+                    validation_results['duplicate_records'].append({
+                        'name': name,
+                        'date': date,
+                        'line': daily_data['line'],
+                        'shift': unique_shifts[0],
+                        'count': len(shifts)
+                    })
+            
+            # 統計班數：每天算一班，不管有幾個班別
+            if name not in person_shift_counts:
+                person_shift_counts[name] = 0
+            person_shift_counts[name] += 1
         
         # 分析班數分布
         if person_shift_counts:
@@ -1832,6 +2222,20 @@ def validate_shift_count_equality(df):
                     })
         else:
             validation_results['warnings'].append('沒有找到有效的班別資料')
+        
+        # 處理重複記錄錯誤
+        if validation_results['duplicate_records']:
+            validation_results['is_valid'] = False
+            for dup in validation_results['duplicate_records']:
+                validation_results['errors'].append(
+                    f"第{dup['line']}行：重複記錄 - {dup['name']} 在 {dup['date']} 重複 {dup['count']} 次班別 {dup['shift']}"
+                )
+        
+        # 處理非全職人員資訊
+        if validation_results['part_time_employees']:
+            validation_results['warnings'].append(
+                f"發現 {len(validation_results['part_time_employees'])} 位非全職人員（有空白班別）"
+            )
         
     except Exception as e:
         validation_results['is_valid'] = False
@@ -1961,17 +2365,25 @@ def validate_excel_data_v11(df, data_version, filename, target_group, whitelist_
                     result['error_messages'].append(f'第{index+2}行：日期欄非日期格式')
                     continue
                 
-                # 班別驗證
-                shift_code = str(row[shift_col]).strip() if pd.notna(row[shift_col]) else ''
-                if not shift_code:
+                # 班別驗證 - 先標準化班別代號
+                original_shift = str(row[shift_col]).strip() if pd.notna(row[shift_col]) else ''
+                if not original_shift:
                     result['errors'] += 1
                     result['error_messages'].append(f'第{index+2}行：班別欄位空白')
                     continue
                 
+                # 標準化班別代號
+                shift_code = normalize_shift_code(original_shift)
+                
                 if shift_code not in valid_shifts:
                     result['errors'] += 1
-                    result['error_messages'].append(f'第{index+2}行：班別代號錯誤：{shift_code}')
+                    result['error_messages'].append(f'第{index+2}行：班別代號錯誤：{original_shift} (標準化後: {shift_code})')
                     continue
+                
+                # 如果有轉換，記錄轉換資訊
+                if original_shift != shift_code:
+                    result['warnings'] += 1
+                    result['error_messages'].append(f'第{index+2}行：班別已自動轉換：{original_shift} → {shift_code}')
                 
                 # 重複資料檢查
                 schedule_key = f"{employee_name}_{schedule_date}"
@@ -2147,6 +2559,7 @@ def confirm_import():
         target_group = request.form.get('target_group')
         filename = request.form.get('filename')
         force_import = request.form.get('force_import') == 'true'
+        allow_blank_shifts = request.form.get('allow_blank_shifts') == 'true'
         import_mode = request.form.get('import_mode', 'merge')  # 默認為合併模式
         
         if not csv_data or not target_group or not filename:
@@ -2169,7 +2582,12 @@ def confirm_import():
             return redirect(url_for('main.upload_new'))
         
         # 執行匯入
-        import_result = perform_data_import_v11(df, validation_result, target_group, False, import_mode)
+        import_options = {
+            'force_import': force_import,
+            'allow_blank_shifts': allow_blank_shifts,
+            'import_mode': import_mode
+        }
+        import_result = perform_data_import_v11(df, validation_result, target_group, False, import_mode, import_options)
         
         # 記錄匯入日誌
         current_user = get_current_user()
@@ -2386,8 +2804,52 @@ def update_group_members(group_name):
             'message': f'更新失敗: {str(e)}'
         }), 500
 
-def perform_data_import_v11(df, validation_result, target_group, skip_invalid, import_mode='merge'):
-    """執行v1.1版本的實際資料匯入 - 支援3欄位和5欄位格式，優化批量處理"""
+@main.route('/api/clear-all-data', methods=['POST'])
+@require_admin
+def clear_all_data():
+    """清除所有班表資料和匯入記錄（保留員工和班別設定）"""
+    try:
+        # 計算清除前的資料統計
+        schedule_count = Schedule.query.count()
+        import_log_count = ImportLog.query.count()
+        
+        print(f"🗑️ 準備清除資料：{schedule_count} 筆排班記錄，{import_log_count} 筆匯入記錄")
+        
+        # 清除排班記錄
+        Schedule.query.delete()
+        
+        # 清除匯入日誌
+        ImportLog.query.delete()
+        
+        # 提交變更
+        db.session.commit()
+        
+        message = f"成功清除 {schedule_count} 筆排班記錄和 {import_log_count} 筆匯入記錄"
+        print(f"✅ {message}")
+        
+        return jsonify({
+            'status': 'success',
+            'message': message,
+            'cleared': {
+                'schedules': schedule_count,
+                'import_logs': import_log_count
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ 清除資料失敗: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'清除失敗: {str(e)}'
+        }), 500
+
+def perform_data_import_v11(df, validation_result, target_group, skip_invalid, import_mode='merge', import_options=None):
+    """執行v1.1版本的實際資料匯入 - 支援3欄位和5欄位格式，優化批量處理，新增強制匯入功能"""
+    if import_options is None:
+        import_options = {}
+    
+    force_import = import_options.get('force_import', False)
+    allow_blank_shifts = import_options.get('allow_blank_shifts', True)
     imported_count = 0
     skipped_count = 0
     updated_count = 0
@@ -2437,7 +2899,38 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid, i
             try:
                 # 提取姓名和班別
                 employee_name = str(row[name_col]).strip()
-                shift_code = str(row[shift_col]).strip()
+                
+                # 處理班別欄位（支援空白和複合格式）
+                shift_raw = row[shift_col] if pd.notna(row[shift_col]) else ''
+                shift_code = str(shift_raw).strip()
+                
+                # 處理空白班別
+                if not shift_code:
+                    if allow_blank_shifts:
+                        shift_code = 'UNASSIGNED'  # 未排班代碼
+                        print(f"📝 空白班別處理為未排班: {employee_name}")
+                    else:
+                        skipped_count += 1
+                        continue
+                
+                # 處理複合班別格式（如 P1c/工程, P4p/ME 等）
+                original_shift_code = shift_code
+                if '/' in shift_code:
+                    # 提取主要班別代碼（/之前的部分）
+                    base_shift = shift_code.split('/')[0].strip()
+                    suffix = shift_code.split('/')[1].strip() if len(shift_code.split('/')) > 1 else ''
+                    print(f"🔧 複合班別: {shift_code} → 基礎班別: {base_shift}, 後綴: {suffix}")
+                    
+                    if force_import:
+                        # 強制匯入模式：保持完整的複合班別代碼
+                        pass
+                    else:
+                        # 一般模式：使用基礎班別代碼進行驗證
+                        shift_code = base_shift
+                
+                # 處理特殊格式（如帶換行的班別）
+                if '\n' in shift_code:
+                    shift_code = shift_code.replace('\n', ' ').strip()
                 
                 # 提取員工代碼（如果是5欄位格式）
                 employee_code = None
@@ -2448,7 +2941,7 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid, i
                 date_value = get_date_value_enhanced(row, columns_info)
                 
                 # 跳過空白或無效資料
-                if not employee_name or not shift_code or not date_value:
+                if not employee_name or not date_value:
                     continue
                 
                 # 群組過濾檢查：如果不是全名單模式，只處理目標群組的員工
@@ -2456,8 +2949,9 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid, i
                     skipped_count += 1
                     continue
                 
-                # 班別代碼檢查
-                if shift_code not in valid_shifts:
+                # 班別代碼檢查（強制匯入模式會自動創建新班別）
+                if shift_code not in valid_shifts and not force_import:
+                    print(f"⚠️ 未知班別代碼: {shift_code} (第{index+2}行)")
                     skipped_count += 1
                     continue
                 
@@ -2505,19 +2999,35 @@ def perform_data_import_v11(df, validation_result, target_group, skip_invalid, i
                         employee.employee_code = employee_code
                         print(f"🔄 更新員工代碼: {employee_name} ({old_code} → {employee_code})")
                 
-                # 查找或創建班別類型
-                shift_type = ShiftType.query.filter_by(code=shift_code).first()
+                # 查找或創建班別類型（使用原始的複合班別代碼）
+                final_shift_code = original_shift_code if force_import else shift_code
+                shift_type = ShiftType.query.filter_by(code=final_shift_code).first()
                 if not shift_type:
-                    shift_name, start_time, end_time, color = get_shift_info(shift_code)
-                    shift_type = ShiftType(
-                        code=shift_code,
-                        name=shift_name,
-                        start_time=start_time,
-                        end_time=end_time,
-                        color=color
-                    )
-                    db.session.add(shift_type)
-                    db.session.flush()
+                    if force_import or final_shift_code == 'UNASSIGNED':
+                        # 強制匯入或未排班：創建新班別類型
+                        shift_name, start_time, end_time, color = get_shift_info(final_shift_code)
+                        shift_type = ShiftType(
+                            code=final_shift_code,
+                            name=shift_name,
+                            start_time=start_time,
+                            end_time=end_time,
+                            color=color
+                        )
+                        db.session.add(shift_type)
+                        db.session.flush()
+                        print(f"✅ 創建新班別類型: {final_shift_code}")
+                    else:
+                        # 一般模式：使用標準班別資訊
+                        shift_name, start_time, end_time, color = get_shift_info(shift_code)
+                        shift_type = ShiftType(
+                            code=shift_code,
+                            name=shift_name,
+                            start_time=start_time,
+                            end_time=end_time,
+                            color=color
+                        )
+                        db.session.add(shift_type)
+                        db.session.flush()
                 
                 # 檢查是否已存在排班記錄
                 existing_schedule = Schedule.query.filter_by(

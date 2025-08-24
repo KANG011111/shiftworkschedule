@@ -18,14 +18,26 @@ def create_app():
     
     if database_url:
         print(f"🔗 使用環境變數資料庫: {database_url}")
-    elif 'production' in flask_env or not os.access(os.getcwd(), os.W_OK):
-        # 生產環境或無寫入權限時使用記憶體資料庫
+    elif flask_env == 'production':
+        # 只有明確設定為 production 時才使用記憶體資料庫
         database_url = 'sqlite:///:memory:'
-        print("🏭 強制使用記憶體 SQLite 資料庫（生產環境或無寫入權限）")
+        print("🏭 生產環境：使用記憶體 SQLite 資料庫")
+    elif not os.access(os.getcwd(), os.W_OK):
+        # 無寫入權限時使用記憶體資料庫
+        database_url = 'sqlite:///:memory:'
+        print("🔒 無寫入權限：使用記憶體 SQLite 資料庫")
     else:
-        # 開發環境使用檔案資料庫
-        database_url = 'sqlite:///instance/shift_schedule.db'
-        print("🔧 開發環境：使用檔案 SQLite 資料庫")
+        # 預設使用檔案資料庫（開發環境和本地測試）
+        # 確保instance目錄存在
+        instance_dir = os.path.join(os.getcwd(), 'instance')
+        if not os.path.exists(instance_dir):
+            os.makedirs(instance_dir)
+            print(f"📁 創建instance目錄: {instance_dir}")
+        
+        # 使用絕對路徑避免路徑解析問題
+        db_path = os.path.join(instance_dir, 'shift_schedule.db')
+        database_url = f'sqlite:///{db_path}'
+        print(f"🔧 本地環境：使用檔案 SQLite 資料庫 ({db_path})")
     
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -68,6 +80,9 @@ def create_app():
     # 資料庫初始化函數
     def init_database():
         try:
+            # 確保所有模型都被導入
+            from app.models import User, Employee, ShiftType, Schedule, ImportLog, GroupMembers, Session
+            
             db.create_all()
             print("✅ 資料庫表創建成功")
             
@@ -75,7 +90,6 @@ def create_app():
             init_default_groups()
             
             # 確保有管理員帳號
-            from app.models import User
             admin_user = User.query.filter_by(username='admin').first()
             if not admin_user:
                 admin_user = User(
@@ -87,8 +101,29 @@ def create_app():
                 # 預設管理員密碼，生產環境請務必修改
                 admin_user.set_password('admin123')
                 db.session.add(admin_user)
-                db.session.commit()
                 print('👑 管理員帳號已創建: admin/admin123')
+            
+            # 創建測試用戶帳號
+            test_users = [
+                ('user1', '測試用戶1', 'user'),
+                ('user2', '測試用戶2', 'user'),
+                ('lightuser', '燈光組員工', 'user')
+            ]
+            
+            for username, name, role in test_users:
+                existing_user = User.query.filter_by(username=username).first()
+                if not existing_user:
+                    test_user = User(
+                        username=username,
+                        name=name,
+                        role=role,
+                        status='approved'
+                    )
+                    test_user.set_password('123456')  # 簡單密碼方便測試
+                    db.session.add(test_user)
+                    print(f'👤 測試帳號已創建: {username}/123456 ({name})')
+            
+            db.session.commit()
             
             from app.models import ShiftType
             from datetime import time
@@ -188,54 +223,8 @@ def create_app():
                 Schedule.query.delete()
                 db.session.commit()
                 
-            # 建立完整31天測試班表資料
-            import random
-            from datetime import datetime, date
-            
-            # 設定隨機種子確保可重現結果  
-            random.seed(42)
-            
-            shift_codes = ['FC', 'FX', 'P1c', 'P1n', 'P1p', 'P1s', 'P2c', 'P2n', 'P2p', 'P2s', 
-                          'P3c', 'P3n', 'P3p', 'P4c', 'P4n', 'P4p', 'H0', 'H1']
-            
-            # 獲取所有班別類型
-            shift_types = {st.code: st for st in ShiftType.query.all()}
-            print(f'🔍 可用班別代碼: {len(shift_types)} 個')
-            
-            schedule_count = 0
-            total_expected = 31 * len(employee_data)  # 31天 × 7員工 = 217筆
-            
-            # 為每個員工建立完整31天排班
-            for name, _ in employee_data:
-                employee = Employee.query.filter_by(name=name).first()
-                if not employee:
-                    print(f'⚠️ 找不到員工: {name}')
-                    continue
-                    
-                employee_schedules = 0
-                for day in range(1, 32):  # 1-31天
-                    schedule_date = date(2025, 7, day)
-                    
-                    # 隨機選擇班別代碼
-                    shift_code = random.choice(shift_codes)
-                    shift_type = shift_types.get(shift_code)
-                    
-                    if shift_type:
-                        schedule = Schedule(
-                            employee_id=employee.id,
-                            shift_type_id=shift_type.id,
-                            date=schedule_date
-                        )
-                        db.session.add(schedule)
-                        schedule_count += 1
-                        employee_schedules += 1
-                    else:
-                        print(f'⚠️ 找不到班別類型: {shift_code}')
-                
-                print(f'📅 {name}: 建立 {employee_schedules} 天排班')
-            
-            db.session.commit()
-            print(f'✅ 初始化 {schedule_count}/{total_expected} 筆測試班表資料')
+            # 註釋掉自動建立測試排班資料，讓用戶可以進行乾淨測試
+            # print('🔄 跳過自動建立測試排班資料，等待用戶匯入')
             
         except Exception as e:
             print(f"⚠️ 測試資料初始化錯誤: {e}")

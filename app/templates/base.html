@@ -180,14 +180,7 @@
                             <span class="d-lg-none">查詢</span>
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('main.employees') }}">
-                            <i class="fas fa-users d-lg-none"></i>
-                            <span class="d-none d-lg-inline">員工管理</span>
-                            <span class="d-lg-none">員工</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
+                    <li class="nav-item" id="uploadNavItem" style="display: none;">
                         <a class="nav-link" href="{{ url_for('main.upload_new') }}">
                             <i class="fas fa-upload d-lg-none"></i>
                             <span class="d-none d-lg-inline">班表匯入</span>
@@ -294,6 +287,7 @@
             const userName = document.getElementById('userName');
             const userRole = document.getElementById('userRole');
             const adminLink = document.getElementById('adminLink');
+            const uploadNavItem = document.getElementById('uploadNavItem');
             
             if (isLoggedIn && currentUser) {
                 // 顯示用戶信息
@@ -307,15 +301,18 @@
                 if (currentUser.role === 'admin') {
                     userRole.textContent = '管理員';
                     adminLink.style.display = 'block';
+                    uploadNavItem.style.display = 'block'; // 只有管理員可看到匯入功能
                 } else {
                     userRole.textContent = '一般用戶';
                     adminLink.style.display = 'none';
+                    uploadNavItem.style.display = 'none';
                 }
             } else {
                 // 未登入時隱藏所有需要權限的功能
                 userDropdown.style.display = 'none';
                 loginLink.style.display = 'block';
                 registerLink.style.display = 'block';
+                uploadNavItem.style.display = 'none';
             }
         }
         

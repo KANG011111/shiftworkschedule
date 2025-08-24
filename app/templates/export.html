@@ -68,9 +68,14 @@
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h5><i class="fas fa-calendar-alt"></i> 班表預覽</h5>
-                            <button type="button" class="btn btn-success" onclick="downloadJPG()">
-                                <i class="fas fa-download me-1"></i>下載JPG
-                            </button>
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-success" onclick="downloadJPG()">
+                                    <i class="fas fa-image me-1"></i>下載JPG
+                                </button>
+                                <button type="button" class="btn btn-primary" onclick="downloadICS()">
+                                    <i class="fas fa-calendar-plus me-1"></i>下載ICS
+                                </button>
+                            </div>
                         </div>
                         <div class="card-body text-center">
                             <div id="calendarPreview" class="calendar-container"></div>
@@ -102,40 +107,25 @@
                 </ul>
                 
                 <h6 class="mt-3">檔案格式：</h6>
+                <ul class="small text-muted">
+                    <li><strong>JPG圖片：</strong>員工姓名_年月_班表.jpg</li>
+                    <li><strong>ICS日曆：</strong>員工姓名_年月_班表.ics</li>
+                </ul>
                 <p class="small text-muted">
-                    檔案名稱：員工姓名_年月_班表.xlsx<br>
-                    例如：李惟綱_2025年07月_班表.xlsx
+                    <i class="fas fa-info-circle"></i> ICS檔案可直接匯入Google日曆、iPhone日曆、Outlook等
                 </p>
             </div>
         </div>
         
         <div class="card mt-3">
             <div class="card-header">
-                <h5><i class="fas fa-users"></i> 快速搜尋</h5>
+                <h5><i class="fas fa-lightbulb"></i> 燈光組快速搜尋</h5>
             </div>
             <div class="card-body">
-                <div class="d-grid gap-2">
-                    <button class="btn btn-outline-primary btn-sm" onclick="fillEmployee('賴秉宏')">
-                        賴秉宏
-                    </button>
-                    <button class="btn btn-outline-secondary btn-sm" onclick="fillEmployee('李惟綱')">
-                        李惟綱
-                    </button>
-                    <button class="btn btn-outline-info btn-sm" onclick="fillEmployee('李家瑋')">
-                        李家瑋
-                    </button>
-                    <button class="btn btn-outline-success btn-sm" onclick="fillEmployee('王志忠')">
-                        王志忠
-                    </button>
-                    <button class="btn btn-outline-warning btn-sm" onclick="fillEmployee('顧育禎')">
-                        顧育禎
-                    </button>
-                    <button class="btn btn-outline-danger btn-sm" onclick="fillEmployee('胡翊潔')">
-                        胡翊潔
-                    </button>
-                    <button class="btn btn-outline-dark btn-sm" onclick="fillEmployee('朱家德')">
-                        朱家德
-                    </button>
+                <div class="d-grid gap-2" id="lightingMembersButtons">
+                    <div class="text-center text-muted">
+                        <i class="fas fa-spinner fa-spin"></i> 載入燈光組人員中...
+                    </div>
                 </div>
             </div>
         </div>
@@ -263,20 +253,26 @@ function initializeYearOptions() {
 
 // 載入可用年月資料並設定預設值
 async function loadAvailableMonths() {
+    console.log('🔄 [DEBUG] 開始載入可用日期範圍...');
     try {
         const response = await fetch('/api/date_range');
         const dateRange = await response.json();
         
+        console.log('📊 [DEBUG] 日期範圍資料:', dateRange);
+        
         if (dateRange.available_months) {
-            // 設定預設的年月
             const months = Object.values(dateRange.available_months);
+            console.log('📅 [DEBUG] 可用月份數量:', months.length);
+            console.log('📅 [DEBUG] 可用月份詳情:', months);
+            
             if (months.length > 0) {
                 document.getElementById('exportYear').value = months[0].year;
                 document.getElementById('exportMonth').value = months[0].month;
+                console.log('✅ [DEBUG] 預設日期設定:', `${months[0].year}年${months[0].month}月`);
             }
         }
     } catch (error) {
-        console.error('載入日期範圍失敗:', error);
+        console.error('❌ [DEBUG] 載入日期範圍失敗:', error);
     }
 }
 
@@ -294,7 +290,11 @@ async function previewSchedule() {
     const year = document.getElementById('exportYear').value;
     const month = document.getElementById('exportMonth').value;
     
+    console.log('🔍 [DEBUG] 開始預覽班表...');
+    console.log('📝 [DEBUG] 搜尋參數:', { query, year, month });
+    
     if (!query || !year || !month) {
+        console.error('❌ [DEBUG] 參數不完整:', { query, year, month });
         alert('請填寫完整資訊');
         return;
     }
@@ -310,14 +310,53 @@ async function previewSchedule() {
     try {
         // 獲取員工班表資料
         const params = new URLSearchParams({ query, year, month });
-        const response = await fetch(`/api/preview_schedule?${params.toString()}`);
+        const apiUrl = `/api/preview_schedule?${params.toString()}`;
+        
+        console.log('🌐 [DEBUG] API請求URL:', apiUrl);
+        console.log('📡 [DEBUG] 發送API請求...');
+        
+        const startTime = performance.now();
+        const response = await fetch(apiUrl);
+        const endTime = performance.now();
+        const responseTime = Math.round(endTime - startTime);
+        
+        console.log('⏱️ [DEBUG] API回應時間:', `${responseTime}ms`);
+        console.log('📊 [DEBUG] HTTP狀態碼:', response.status);
+        console.log('📊 [DEBUG] Response headers:', Object.fromEntries(response.headers.entries()));
+        
         const data = await response.json();
+        console.log('📊 [DEBUG] API回應資料:', data);
         
         if (!response.ok) {
+            console.error('❌ [DEBUG] API回應錯誤:', data);
             throw new Error(data.error || '載入失敗');
         }
         
+        // 檢查是否返回多個匹配員工
+        if (data.multiple_matches) {
+            console.log('🔍 [DEBUG] 找到多個匹配員工，顯示選擇列表');
+            console.log('👥 [DEBUG] 匹配員工列表:', data.choices);
+            showEmployeeChoices(data.choices, year, month, query);
+            return;
+        }
+        
+        // 分析回應資料
+        console.log('👤 [DEBUG] 找到員工:', data.employee);
+        console.log('📅 [DEBUG] 目標年月:', `${data.year}年${data.month}月`);
+        console.log('📊 [DEBUG] 排班記錄數量:', data.schedules.length);
+        
+        if (data.schedules.length > 0) {
+            console.log('📊 [DEBUG] 排班記錄範例:', data.schedules.slice(0, 3));
+            const shiftTypes = [...new Set(data.schedules.map(s => s.shift_code))];
+            console.log('🎯 [DEBUG] 包含的班別類型:', shiftTypes);
+        } else {
+            console.log('⚠️ [DEBUG] 該月份無排班記錄');
+        }
+        
+        console.log('📅 [DEBUG] 月曆結構:', data.calendar);
+        
         // 生成月曆預覽
+        console.log('🎨 [DEBUG] 開始生成月曆預覽...');
         generateCalendarPreview(data);
         
         // 顯示預覽區域
@@ -328,11 +367,26 @@ async function previewSchedule() {
             </div>
         `;
         
+        console.log('✅ [DEBUG] 班表預覽生成完成');
+        console.log('📊 [DEBUG] 篩選結果統計:', {
+            員工姓名: data.employee.name,
+            員工代碼: data.employee.employee_code,
+            目標月份: `${data.year}年${data.month}月`,
+            排班天數: data.schedules.length,
+            API回應時間: `${responseTime}ms`
+        });
+        
         // 滾動到預覽區域
         document.getElementById('schedulePreview').scrollIntoView({ behavior: 'smooth' });
         
     } catch (error) {
-        console.error('預覽失敗:', error);
+        console.error('❌ [DEBUG] 預覽失敗:', error);
+        console.error('❌ [DEBUG] 錯誤詳情:', {
+            名稱: error.name,
+            訊息: error.message,
+            堆疊: error.stack
+        });
+        
         statusDiv.innerHTML = `
             <div class="alert alert-danger">
                 <i class="fas fa-exclamation-triangle"></i> ${error.message}
@@ -426,38 +480,63 @@ function getShiftClass(shiftCode) {
 
 // 下載JPG
 async function downloadJPG() {
+    console.log('📸 [DEBUG] 開始JPG圖片下載...');
+    
     const calendarElement = document.getElementById('calendarPreview');
     
     if (!calendarElement.innerHTML) {
+        console.error('❌ [DEBUG] 沒有可下載的班表預覽');
         alert('請先預覽班表');
         return;
     }
     
     try {
+        // 取得檔案資訊
+        const query = document.getElementById('searchQuery').value.trim();
+        const year = document.getElementById('exportYear').value;
+        const month = document.getElementById('exportMonth').value;
+        const monthStr = month.toString().padStart(2, '0');
+        const fileName = `${query}_${year}年${monthStr}月_班表.jpg`;
+        
+        console.log('📁 [DEBUG] 目標檔案名:', fileName);
+        console.log('🎨 [DEBUG] 開始HTML轉換為Canvas...');
+        
+        const startTime = performance.now();
         const canvas = await html2canvas(calendarElement, {
             backgroundColor: '#ffffff',
             scale: 2, // 提高解析度
             useCORS: true,
             allowTaint: true
         });
+        const endTime = performance.now();
+        const renderTime = Math.round(endTime - startTime);
+        
+        console.log('⏱️ [DEBUG] Canvas渲染時間:', `${renderTime}ms`);
+        console.log('📊 [DEBUG] Canvas尺寸:', `${canvas.width}x${canvas.height}`);
         
         // 轉換為JPG並下載
         canvas.toBlob(function(blob) {
+            const fileSizeKB = Math.round(blob.size / 1024);
+            console.log('📊 [DEBUG] JPG檔案大小:', `${fileSizeKB}KB`);
+            
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             
-            // 取得員工資訊建立檔案名稱
-            const query = document.getElementById('searchQuery').value.trim();
-            const year = document.getElementById('exportYear').value;
-            const month = document.getElementById('exportMonth').value;
-            const monthStr = month.toString().padStart(2, '0');
-            
             a.href = url;
-            a.download = `${query}_${year}年${monthStr}月_班表.jpg`;
+            a.download = fileName;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            
+            console.log('✅ [DEBUG] JPG檔案下載完成');
+            console.log('📊 [DEBUG] JPG匯出統計:', {
+                檔案名稱: fileName,
+                檔案大小: `${fileSizeKB}KB`,
+                圖片尺寸: `${canvas.width}x${canvas.height}`,
+                渲染時間: `${renderTime}ms`,
+                圖片質量: '90%'
+            });
             
             document.getElementById('exportStatus').innerHTML = `
                 <div class="alert alert-success">
@@ -467,8 +546,117 @@ async function downloadJPG() {
         }, 'image/jpeg', 0.9);
         
     } catch (error) {
-        console.error('下載失敗:', error);
+        console.error('❌ [DEBUG] JPG下載失敗:', error);
+        console.error('❌ [DEBUG] 錯誤詳情:', {
+            名稱: error.name,
+            訊息: error.message,
+            堆疊: error.stack
+        });
         alert('下載失敗，請稍後再試');
+    }
+}
+
+// 下載ICS日曆檔案
+async function downloadICS() {
+    console.log('📅 [DEBUG] 開始ICS日曆檔案下載...');
+    
+    const query = document.getElementById('searchQuery').value.trim();
+    const year = document.getElementById('exportYear').value;
+    const month = document.getElementById('exportMonth').value;
+    
+    console.log('📝 [DEBUG] ICS下載參數:', { query, year, month });
+    
+    if (!query || !year || !month) {
+        console.error('❌ [DEBUG] ICS下載參數不完整:', { query, year, month });
+        alert('請先預覽班表');
+        return;
+    }
+    
+    try {
+        const statusDiv = document.getElementById('exportStatus');
+        statusDiv.innerHTML = `
+            <div class="alert alert-info">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                正在生成ICS日曆檔案...
+            </div>
+        `;
+        
+        // 呼叫ICS匯出API，確保正確編碼
+        const params = new URLSearchParams();
+        params.append('query', query);
+        params.append('year', year);
+        params.append('month', month);
+        const apiUrl = `/api/export_ics?${params.toString()}`;
+        
+        console.log('🌐 [DEBUG] ICS API請求URL:', apiUrl);
+        console.log('📡 [DEBUG] 發送ICS API請求...');
+        
+        const startTime = performance.now();
+        const response = await fetch(apiUrl);
+        const endTime = performance.now();
+        const responseTime = Math.round(endTime - startTime);
+        
+        console.log('⏱️ [DEBUG] ICS API回應時間:', `${responseTime}ms`);
+        console.log('📊 [DEBUG] ICS HTTP狀態碼:', response.status);
+        console.log('📊 [DEBUG] ICS Response headers:', Object.fromEntries(response.headers.entries()));
+        
+        if (!response.ok) {
+            const error = await response.json();
+            console.error('❌ [DEBUG] ICS API回應錯誤:', error);
+            throw new Error(error.error || '下載失敗');
+        }
+        
+        // 下載檔案
+        console.log('📁 [DEBUG] 開始處理ICS檔案blob...');
+        const blob = await response.blob();
+        const fileSizeKB = Math.round(blob.size / 1024);
+        
+        console.log('📊 [DEBUG] ICS檔案大小:', `${fileSizeKB}KB`);
+        console.log('📊 [DEBUG] ICS檔案類型:', blob.type);
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        
+        const monthStr = month.toString().padStart(2, '0');
+        const fileName = `${query}_${year}年${monthStr}月_班表.ics`;
+        
+        console.log('📁 [DEBUG] ICS檔案名稱:', fileName);
+        
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('✅ [DEBUG] ICS檔案下載完成');
+        console.log('📊 [DEBUG] ICS匯出統計:', {
+            檔案名稱: fileName,
+            檔案大小: `${fileSizeKB}KB`,
+            檔案格式: 'ICS (iCalendar)',
+            API回應時間: `${responseTime}ms`,
+            內容類型: blob.type || 'text/calendar'
+        });
+        
+        statusDiv.innerHTML = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> ICS日曆檔案已下載！可匯入到您的日曆應用程式
+            </div>
+        `;
+        
+    } catch (error) {
+        console.error('❌ [DEBUG] ICS下載失敗:', error);
+        console.error('❌ [DEBUG] ICS錯誤詳情:', {
+            名稱: error.name,
+            訊息: error.message,
+            堆疊: error.stack
+        });
+        
+        document.getElementById('exportStatus').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> ${error.message}
+            </div>
+        `;
     }
 }
 
@@ -478,10 +666,201 @@ document.getElementById('exportForm').addEventListener('submit', async function(
     previewSchedule(); // 直接呼叫預覽功能
 });
 
+// 載入燈光組人員列表
+async function loadLightingMembers() {
+    console.log('👥 [DEBUG] 開始載入燈光組人員列表...');
+    try {
+        const response = await fetch('/api/group-members');
+        const result = await response.json();
+        
+        console.log('📊 [DEBUG] 群組人員API回應:', result);
+        
+        if (result.status === 'success' && result.data.燈光組) {
+            const members = result.data.燈光組;
+            console.log('👥 [DEBUG] 燈光組人員數量:', members.length);
+            console.log('👥 [DEBUG] 燈光組人員名單:', members);
+            
+            const buttonsContainer = document.getElementById('lightingMembersButtons');
+            
+            if (members.length === 0) {
+                console.log('⚠️  [DEBUG] 燈光組人員名單為空');
+                buttonsContainer.innerHTML = `
+                    <div class="alert alert-info text-center">
+                        <i class="fas fa-info-circle"></i> 尚未設定燈光組人員名單
+                    </div>
+                `;
+            } else {
+                // 生成人員按鈕
+                const colors = ['primary', 'secondary', 'info', 'success', 'warning', 'danger'];
+                const buttons = members.map((member, index) => {
+                    const colorClass = colors[index % colors.length];
+                    return `
+                        <button class="btn btn-outline-${colorClass} btn-sm" onclick="fillEmployee('${member}')">
+                            ${member}
+                        </button>
+                    `;
+                }).join('');
+                
+                console.log('🎨 [DEBUG] 生成按鈕HTML完成');
+                buttonsContainer.innerHTML = buttons;
+            }
+            
+        } else if (result.message === '需要登入') {
+            console.log('🔐 [DEBUG] 用戶未登入');
+            // 用戶未登入，顯示提示
+            document.getElementById('lightingMembersButtons').innerHTML = `
+                <div class="alert alert-info text-center">
+                    <i class="fas fa-info-circle"></i> 請先登入以查看燈光組人員名單
+                </div>
+            `;
+            return;
+        } else {
+            throw new Error(result.message || '載入失敗');
+        }
+    } catch (error) {
+        console.error('❌ [DEBUG] 載入燈光組人員失敗:', error);
+        document.getElementById('lightingMembersButtons').innerHTML = `
+            <div class="alert alert-warning text-center">
+                <i class="fas fa-exclamation-triangle"></i> ${error.message || '載入人員名單失敗'}
+            </div>
+        `;
+        document.getElementById('memberCount').textContent = '載入失敗';
+    }
+}
+
+// 顯示員工選擇列表
+function showEmployeeChoices(choices, year, month, originalQuery) {
+    console.log('👥 [DEBUG] 開始生成員工選擇界面');
+    console.log('📝 [DEBUG] 選擇參數:', { choices, year, month, originalQuery });
+    
+    const statusDiv = document.getElementById('exportStatus');
+    
+    // 生成選擇按鈕
+    const choiceButtons = choices.map((employee, index) => {
+        const colorClasses = ['primary', 'success', 'info', 'warning', 'danger', 'secondary'];
+        const colorClass = colorClasses[index % colorClasses.length];
+        
+        return `
+            <button class="btn btn-outline-${colorClass} btn-lg me-2 mb-2" 
+                    onclick="selectEmployee('${employee.id}', '${year}', '${month}', '${employee.name}', '${employee.employee_code}')">
+                <i class="fas fa-user me-2"></i>
+                <strong>${employee.name}</strong>
+                <br>
+                <small class="text-muted">${employee.employee_code}</small>
+            </button>
+        `;
+    }).join('');
+    
+    statusDiv.innerHTML = `
+        <div class="alert alert-warning">
+            <h5><i class="fas fa-users me-2"></i>找到多個員工匹配「${originalQuery}」</h5>
+            <p class="mb-3">請選擇要查看班表的員工：</p>
+            <div class="d-flex flex-wrap">
+                ${choiceButtons}
+            </div>
+            <hr>
+            <small class="text-muted">
+                <i class="fas fa-info-circle me-1"></i>
+                提示：您也可以輸入更完整的姓名或工號來直接定位特定員工
+            </small>
+        </div>
+    `;
+    
+    // 隱藏之前的預覽結果
+    document.getElementById('schedulePreview').style.display = 'none';
+    
+    console.log('✅ [DEBUG] 員工選擇界面生成完成');
+}
+
+// 處理員工選擇
+async function selectEmployee(employeeId, year, month, employeeName, employeeCode) {
+    console.log('🎯 [DEBUG] 用戶選擇員工:', { employeeId, year, month, employeeName, employeeCode });
+    
+    const statusDiv = document.getElementById('exportStatus');
+    statusDiv.innerHTML = `
+        <div class="alert alert-info">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+            正在載入 ${employeeName} (${employeeCode}) 的班表...
+        </div>
+    `;
+    
+    try {
+        // 更新搜尋框內容
+        document.getElementById('searchQuery').value = employeeName;
+        
+        // 呼叫新的API端點
+        const params = new URLSearchParams({ employee_id: employeeId, year, month });
+        const apiUrl = `/api/preview_schedule_by_id?${params.toString()}`;
+        
+        console.log('🌐 [DEBUG] 選擇員工API請求URL:', apiUrl);
+        console.log('📡 [DEBUG] 發送選擇員工API請求...');
+        
+        const startTime = performance.now();
+        const response = await fetch(apiUrl);
+        const endTime = performance.now();
+        const responseTime = Math.round(endTime - startTime);
+        
+        console.log('⏱️ [DEBUG] 選擇員工API回應時間:', `${responseTime}ms`);
+        console.log('📊 [DEBUG] 選擇員工HTTP狀態碼:', response.status);
+        
+        const data = await response.json();
+        console.log('📊 [DEBUG] 選擇員工API回應資料:', data);
+        
+        if (!response.ok) {
+            console.error('❌ [DEBUG] 選擇員工API回應錯誤:', data);
+            throw new Error(data.error || '載入失敗');
+        }
+        
+        // 分析回應資料
+        console.log('👤 [DEBUG] 選擇的員工資料:', data.employee);
+        console.log('📅 [DEBUG] 選擇的目標年月:', `${data.year}年${data.month}月`);
+        console.log('📊 [DEBUG] 選擇的排班記錄數量:', data.schedules.length);
+        
+        if (data.schedules.length > 0) {
+            console.log('📊 [DEBUG] 選擇的排班記錄範例:', data.schedules.slice(0, 3));
+            const shiftTypes = [...new Set(data.schedules.map(s => s.shift_code))];
+            console.log('🎯 [DEBUG] 選擇的包含班別類型:', shiftTypes);
+        } else {
+            console.log('⚠️ [DEBUG] 該員工該月份無排班記錄');
+        }
+        
+        // 生成月曆預覽
+        console.log('🎨 [DEBUG] 開始生成選擇員工的月曆預覽...');
+        generateCalendarPreview(data);
+        
+        // 顯示預覽區域
+        document.getElementById('schedulePreview').style.display = 'block';
+        statusDiv.innerHTML = `
+            <div class="alert alert-success">
+                <i class="fas fa-check-circle"></i> 
+                已載入 <strong>${employeeName}</strong> (${employeeCode}) 的班表預覽！
+            </div>
+        `;
+        
+        console.log('✅ [DEBUG] 選擇員工的班表預覽生成完成');
+        console.log('📊 [DEBUG] 選擇員工的篩選結果統計:', {
+            員工姓名: data.employee.name,
+            員工代碼: data.employee.employee_code,
+            目標月份: `${data.year}年${data.month}月`,
+            排班天數: data.schedules.length,
+            API回應時間: `${responseTime}ms`
+        });
+        
+    } catch (error) {
+        console.error('❌ [DEBUG] 載入選擇員工班表失敗:', error);
+        statusDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i> ${error.message}
+            </div>
+        `;
+    }
+}
+
 // 頁面載入時初始化
 document.addEventListener('DOMContentLoaded', function() {
     initializeYearOptions();
     loadAvailableMonths();
+    loadLightingMembers();
 });
 </script>
 {% endblock %}

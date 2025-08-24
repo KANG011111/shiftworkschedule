@@ -123,3 +123,11 @@ cookies*.txt
 
 # Tools directory
 tools/
+
+# Personal data and output directories
+ICSOUTPUT/
+shiftpreview/
+testcsv/
+
+# Personal data configuration
+config/whitelist.json

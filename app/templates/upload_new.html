@@ -13,6 +13,11 @@
 {% if success %}
 <div class="alert alert-success alert-dismissible fade show" role="alert">
     <i class="fas fa-check-circle"></i> {{ success }}
+    <div class="mt-2">
+        <a href="{{ url_for('main.index') }}" class="btn btn-success btn-sm">
+            <i class="fas fa-home me-1"></i>查看首頁最新排班
+        </a>
+    </div>
     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
 </div>
 {% endif %}
@@ -58,24 +63,10 @@
                         <div class="col-md-6 mb-3">
                             <label for="target_group" class="form-label">匯入人員群組</label>
                             <select class="form-select" id="target_group" name="target_group" required>
-                                <option value="">請選擇人員群組</option>
-                                <option value="統籌組">📊 統籌組</option>
+                                <option value="">請選擇匯入群組</option>
                                 <option value="燈光組">💡 燈光組</option>
-                                <option value="舞台組">🎭 舞台組</option>
-                                <option value="視聽組">🔊 視聽組</option>
-                                <option value="維護組">🔧 維護組</option>
-                                <option value="演出人員">演出人員 (統籌+舞台)</option>
-                                <option value="技術人員">技術人員 (燈光+視聽+維護)</option>
-                                <option value="全名單">全名單（不過濾）</option>
+                                <option value="全名單" selected>全名單（不過濾）</option>
                             </select>
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <div class="form-check mt-4">
-                                <input class="form-check-input" type="checkbox" id="skip_invalid" name="skip_invalid">
-                                <label class="form-check-label" for="skip_invalid">
-                                    略過不在白名單者並繼續匯入
-                                </label>
-                            </div>
                         </div>
                     </div>
                     
@@ -367,6 +358,28 @@
                                             </ul>
                                         </div>
                                         {% endif %}
+                                        
+                                        {% if validation_result.shift_equality.duplicate_records %}
+                                        <div class="mt-2">
+                                            <small class="text-danger">重複記錄：</small>
+                                            <ul class="list-unstyled mb-0 mt-1">
+                                                {% for dup in validation_result.shift_equality.duplicate_records %}
+                                                <li class="small text-danger">
+                                                    <strong>{{ dup.name }}</strong> 在 {{ dup.date }} 重複 {{ dup.count }} 次班別 {{ dup.shift }} (第{{ dup.line }}行)
+                                                </li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                        {% endif %}
+                                        
+                                        {% if validation_result.shift_equality.part_time_employees %}
+                                        <div class="mt-2">
+                                            <small class="text-info">非全職人員：</small>
+                                            <div class="small text-muted">
+                                                {{ validation_result.shift_equality.part_time_employees | join(', ') }}
+                                            </div>
+                                        </div>
+                                        {% endif %}
                                     </div>
                                 </div>
                             </div>
@@ -421,13 +434,54 @@
                             </div>
                         </div>
                         <div class="col-md-6">
+                            <div class="card border-warning">
+                                <div class="card-header bg-warning text-dark">
+                                    <h6 class="mb-0">⚙️ 進階選項</h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="force_import" 
+                                               value="true" id="force-import">
+                                        <label class="form-check-label" for="force-import">
+                                            <strong>🔧 強制匯入模式</strong>
+                                            <small class="text-muted d-block">忽略班別驗證，自動建立新班別</small>
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allow_blank_shifts" 
+                                               value="true" id="allow-blank-shifts" checked>
+                                        <label class="form-check-label" for="allow-blank-shifts">
+                                            <strong>📝 允許空白班別</strong>
+                                            <small class="text-muted d-block">將空白班別處理為未排班</small>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 匯入資訊摘要 -->
+                    <div class="row mb-3">
+                        <div class="col-12">
                             <div class="card border-success">
                                 <div class="card-header bg-success text-white">
                                     <h6 class="mb-0">📊 批量匯入資訊</h6>
                                 </div>
                                 <div class="card-body">
-                                    <p class="mb-1"><strong>總記錄數：</strong>{{ validation_result.total_records }} 筆</p>
-                                    <p class="mb-1"><strong>有效記錄：</strong>{{ validation_result.valid_records }} 筆</p>
+                                    <div class="row">
+                                        <div class="col-md-3">
+                                            <p class="mb-1"><strong>總記錄數：</strong>{{ validation_result.total_records }} 筆</p>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <p class="mb-1"><strong>有效記錄：</strong>{{ validation_result.valid_records }} 筆</p>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <p class="mb-1"><strong>警告數量：</strong>{{ validation_result.warnings }} 筆</p>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <p class="mb-1"><strong>錯誤數量：</strong>{{ validation_result.errors }} 筆</p>
+                                        </div>
+                                    </div>
                                     <p class="mb-0"><strong>預計處理時間：</strong>約 {{ (validation_result.total_records / 100) | round(1) }} 秒</p>
                                 </div>
                             </div>
@@ -488,13 +542,30 @@
 
                 <h6 class="mt-3">支援班別：</h6>
                 <div class="row">
-                    <div class="col-6">
-                        <span class="badge bg-primary">A</span> 早班<br>
-                        <span class="badge bg-warning">B</span> 中班<br>
+                    <div class="col-4">
+                        <span class="badge" style="background-color: #28a745">P1s</span><br>
+                        <span class="badge" style="background-color: #28a745">P1sa</span><br>
+                        <span class="badge" style="background-color: #20c997">P1c</span><br>
+                        <span class="badge" style="background-color: #20c997">P1n</span><br>
+                        <span class="badge" style="background-color: #17a2b8">P1p</span><br>
+                        <span class="badge" style="background-color: #ffc107; color: #000">P2s</span><br>
+                        <span class="badge" style="background-color: #ffc107; color: #000">P2sa</span>
                     </div>
-                    <div class="col-6">
-                        <span class="badge bg-danger">C</span> 晚班<br>
-                        <span class="badge bg-secondary">OFF</span> 休假<br>
+                    <div class="col-4">
+                        <span class="badge" style="background-color: #fd7e14">P2c</span><br>
+                        <span class="badge" style="background-color: #fd7e14">P2n</span><br>
+                        <span class="badge" style="background-color: #e83e8c">P2p</span><br>
+                        <span class="badge" style="background-color: #dc3545">P3c</span><br>
+                        <span class="badge" style="background-color: #dc3545">P3n</span><br>
+                        <span class="badge" style="background-color: #6f42c1">P3p</span><br>
+                        <span class="badge" style="background-color: #495057">P4c</span>
+                    </div>
+                    <div class="col-4">
+                        <span class="badge" style="background-color: #495057">P4n</span><br>
+                        <span class="badge" style="background-color: #343a40">P4p</span><br>
+                        <span class="badge" style="background-color: #6c757d">H0</span><br>
+                        <span class="badge" style="background-color: #6c757d">H1</span><br>
+                        <span class="badge" style="background-color: #6c757d">H2</span>
                     </div>
                 </div>
 
@@ -510,9 +581,9 @@
                     <div class="bg-light p-2 rounded">
                         <code>
                             姓名,日期,班別<br>
-                            賴秉宏,2024-07-01,A<br>
-                            李惟綱,2024-07-01,B<br>
-                            李家瑋,2024-07-01,C
+                            賴秉宏,2024-07-01,P1s<br>
+                            李惟綱,2024-07-01,P2c<br>
+                            李家瑋,2024-07-01,P3n
                         </code>
                     </div>
                 </div>
@@ -527,6 +598,73 @@
                         </code>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- 當前班表狀態 -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5><i class="fas fa-database"></i> 當前班表狀態</h5>
+            </div>
+            <div class="card-body">
+                {% if current_stats %}
+                <div class="row">
+                    <div class="col-md-6 col-lg-3 mb-3">
+                        <div class="text-center">
+                            <h4 class="text-primary mb-1">{{ current_stats.total_schedules }}</h4>
+                            <small class="text-muted">總排班記錄</small>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3 mb-3">
+                        <div class="text-center">
+                            <h4 class="text-success mb-1">{{ current_stats.total_employees }}</h4>
+                            <small class="text-muted">總員工數</small>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3 mb-3">
+                        <div class="text-center">
+                            {% if current_stats.today_schedules > 0 %}
+                                <h4 class="text-warning mb-1">{{ current_stats.today_schedules }}</h4>
+                                <small class="text-muted">今日排班</small>
+                            {% else %}
+                                <h4 class="text-muted mb-1">0</h4>
+                                <small class="text-muted">今日無排班</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-3 mb-3">
+                        <div class="text-center">
+                            <h4 class="text-info mb-1">{{ current_stats.month_schedules }}</h4>
+                            <small class="text-muted">本月排班</small>
+                        </div>
+                    </div>
+                </div>
+                
+                {% if current_stats.earliest_date and current_stats.latest_date %}
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-calendar-alt me-2"></i>
+                            <strong>資料範圍：</strong>
+                            {{ current_stats.earliest_date.strftime('%Y年%m月%d日') }} 
+                            至 
+                            {{ current_stats.latest_date.strftime('%Y年%m月%d日') }}
+                            {% if current_stats.latest_date < current_stats.today %}
+                                <span class="text-warning ms-2">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    資料可能需要更新
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    目前資料庫中沒有班表資料，請先匯入班表檔案。
+                </div>
+                {% endif %}
+                {% endif %}
             </div>
         </div>
 
@@ -560,6 +698,33 @@
                 {% endif %}
             </div>
         </div>
+        
+        <!-- 資料管理 -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-database"></i> 資料管理</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <strong>危險操作</strong><br>
+                    <small>清除所有班表資料後無法復原，請謹慎操作</small>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="button" class="btn btn-danger" onclick="confirmClearAllData()">
+                        <i class="fas fa-trash-alt me-2"></i>清除所有班表資料
+                    </button>
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        此操作將清除：排班記錄、匯入日誌（保留員工和班別設定）
+                    </small>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -574,33 +739,16 @@
         </div>
     </div>
     
-    <div class="row">
-        <!-- 統籌組 -->
-        <div class="col-md-6 col-lg-4 mb-3">
-            <div class="card">
-                <div class="card-header bg-info text-white">
-                    <h6 class="mb-0">📊 統籌組</h6>
-                </div>
-                <div class="card-body">
-                    <textarea class="form-control" id="coordination-members" rows="6" 
-                              placeholder="輸入人員姓名，一行一個" 
-                              oninput="updateMemberCount('coordination')"></textarea>
-                    <small class="text-muted mt-2 d-block">
-                        目前人數: <span id="coordination-count" class="fw-bold text-info">0</span>
-                    </small>
-                </div>
-            </div>
-        </div>
-        
+    <div class="row justify-content-center">
         <!-- 燈光組 -->
-        <div class="col-md-6 col-lg-4 mb-3">
+        <div class="col-md-8 col-lg-6 mb-3">
             <div class="card">
                 <div class="card-header bg-warning text-dark">
-                    <h6 class="mb-0">💡 燈光組</h6>
+                    <h6 class="mb-0">💡 燈光組人員名單</h6>
                 </div>
                 <div class="card-body">
-                    <textarea class="form-control" id="lighting-members" rows="6" 
-                              placeholder="輸入人員姓名，一行一個"
+                    <textarea class="form-control" id="lighting-members" rows="12" 
+                              placeholder="輸入燈光組人員姓名，一行一個&#10;例如：&#10;張三&#10;李四&#10;王五"
                               oninput="updateMemberCount('lighting')"></textarea>
                     <small class="text-muted mt-2 d-block">
                         目前人數: <span id="lighting-count" class="fw-bold text-warning">0</span>
@@ -608,70 +756,29 @@
                 </div>
             </div>
         </div>
-        
-        <!-- 舞台組 -->
-        <div class="col-md-6 col-lg-4 mb-3">
-            <div class="card">
-                <div class="card-header bg-success text-white">
-                    <h6 class="mb-0">🎭 舞台組</h6>
-                </div>
-                <div class="card-body">
-                    <textarea class="form-control" id="stage-members" rows="6" 
-                              placeholder="輸入人員姓名，一行一個"
-                              oninput="updateMemberCount('stage')"></textarea>
-                    <small class="text-muted mt-2 d-block">
-                        目前人數: <span id="stage-count" class="fw-bold text-success">0</span>
-                    </small>
-                </div>
-            </div>
-        </div>
-        
-        <!-- 視聽組 -->
-        <div class="col-md-6 col-lg-4 mb-3">
-            <div class="card">
-                <div class="card-header bg-danger text-white">
-                    <h6 class="mb-0">🔊 視聽組</h6>
-                </div>
-                <div class="card-body">
-                    <textarea class="form-control" id="audiovisual-members" rows="6" 
-                              placeholder="輸入人員姓名，一行一個"
-                              oninput="updateMemberCount('audiovisual')"></textarea>
-                    <small class="text-muted mt-2 d-block">
-                        目前人數: <span id="audiovisual-count" class="fw-bold text-danger">0</span>
-                    </small>
-                </div>
-            </div>
-        </div>
-        
-        <!-- 維護組 -->
-        <div class="col-md-6 col-lg-4 mb-3">
-            <div class="card">
-                <div class="card-header bg-secondary text-white">
-                    <h6 class="mb-0">🔧 維護組</h6>
-                </div>
-                <div class="card-body">
-                    <textarea class="form-control" id="maintenance-members" rows="6" 
-                              placeholder="輸入人員姓名，一行一個"
-                              oninput="updateMemberCount('maintenance')"></textarea>
-                    <small class="text-muted mt-2 d-block">
-                        目前人數: <span id="maintenance-count" class="fw-bold text-secondary">0</span>
-                    </small>
-                </div>
-            </div>
-        </div>
     </div>
     
-    <!-- 群組操作按鈕 -->
+    <!-- 燈光組操作按鈕 -->
     <div class="text-center mt-4">
         <button class="btn btn-primary btn-lg" onclick="saveGroupSettings()">
-            <i class="fas fa-save"></i> 儲存群組設定
+            <i class="fas fa-save"></i> 儲存燈光組人員名單
         </button>
         <button class="btn btn-secondary btn-lg ms-2" onclick="loadGroupSettings()">
-            <i class="fas fa-download"></i> 重新載入設定
+            <i class="fas fa-download"></i> 重新載入名單
+        </button>
+        <button class="btn btn-info btn-lg ms-2" onclick="addDefaultMembers()">
+            <i class="fas fa-users-plus"></i> 加入預設人員
         </button>
         <button class="btn btn-warning btn-lg ms-2" onclick="clearAllGroups()">
-            <i class="fas fa-trash"></i> 清空所有群組
+            <i class="fas fa-trash"></i> 清空名單
         </button>
+    </div>
+    
+    <!-- 成功訊息顯示區域 -->
+    <div class="row mt-3">
+        <div class="col-12">
+            <div id="groupMessage" class="alert" style="display: none;"></div>
+        </div>
     </div>
 </div>
 
@@ -827,14 +934,10 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     }, 10000);
 });
 
-// 群組管理功能
-const groupIds = ['coordination', 'lighting', 'stage', 'audiovisual', 'maintenance'];
+// 燈光組管理功能
+const groupIds = ['lighting'];
 const groupNames = {
-    'coordination': '統籌組',
-    'lighting': '燈光組', 
-    'stage': '舞台組',
-    'audiovisual': '視聽組',
-    'maintenance': '維護組'
+    'lighting': '燈光組'
 };
 
 // 自動計算人數
@@ -862,13 +965,51 @@ async function loadGroupSettings() {
                 updateMemberCount(groupId);
             });
             
-            console.log('群組設定載入成功');
+            showGroupMessage('✅ 已載入最新的燈光組人員名單', 'success');
         } else {
-            console.error('載入群組設定失敗:', result.message);
+            showGroupMessage('❌ 載入人員名單失敗', 'danger');
         }
     } catch (error) {
         console.error('載入群組設定錯誤:', error);
+        showGroupMessage('❌ 載入人員名單失敗', 'danger');
     }
+}
+
+// 加入預設燈光組人員
+function addDefaultMembers() {
+    const defaultMembers = [
+        '賴秉宏',
+        '李惟綱', 
+        '李家瑋',
+        '王志忠',
+        '顧育禎',
+        '胡翊潔',
+        '朱家德'
+    ];
+    
+    const textarea = document.getElementById('lighting-members');
+    const currentMembers = textarea.value.trim().split('\n').filter(name => name.trim());
+    
+    // 合併現有人員和預設人員，去重
+    const allMembers = [...new Set([...currentMembers, ...defaultMembers])].filter(name => name.trim());
+    
+    textarea.value = allMembers.join('\n');
+    updateMemberCount('lighting');
+    
+    showGroupMessage(`✅ 已加入預設人員，目前共 ${allMembers.length} 位燈光組成員`, 'info');
+}
+
+// 顯示群組操作訊息
+function showGroupMessage(message, type) {
+    const messageDiv = document.getElementById('groupMessage');
+    messageDiv.className = `alert alert-${type}`;
+    messageDiv.innerHTML = message;
+    messageDiv.style.display = 'block';
+    
+    // 3秒後自動隱藏
+    setTimeout(() => {
+        messageDiv.style.display = 'none';
+    }, 3000);
 }
 
 // 儲存群組設定
@@ -908,15 +1049,67 @@ async function saveGroupSettings() {
     }
 }
 
-// 清空所有群組
+// 清空燈光組名單
 function clearAllGroups() {
-    if (confirm('確定要清空所有群組的人員名單嗎？')) {
+    if (confirm('確定要清空燈光組人員名單嗎？')) {
         groupIds.forEach(groupId => {
             const textarea = document.getElementById(groupId + '-members');
             textarea.value = '';
             updateMemberCount(groupId);
         });
-        alert('已清空所有群組');
+        alert('已清空燈光組人員名單');
+    }
+}
+
+// 確認清除所有資料
+async function confirmClearAllData() {
+    // 雙重確認對話框
+    const firstConfirm = confirm('⚠️ 危險操作！\n\n這將會清除所有班表資料和匯入記錄，此操作無法復原！\n\n確定要繼續嗎？');
+    
+    if (!firstConfirm) {
+        return;
+    }
+    
+    const secondConfirm = confirm('🔥 最終確認！\n\n您即將清除：\n• 所有排班記錄\n• 所有匯入日誌\n• 員工和班別設定將保留\n\n請再次確認是否要執行？');
+    
+    if (!secondConfirm) {
+        return;
+    }
+    
+    try {
+        // 顯示處理中狀態
+        const clearButton = document.querySelector('button[onclick="confirmClearAllData()"]');
+        const originalHTML = clearButton.innerHTML;
+        clearButton.disabled = true;
+        clearButton.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>清除中...';
+        
+        // 發送清除請求
+        const response = await fetch('/api/clear-all-data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            alert('✅ 資料清除完成！\n\n' + result.message);
+            // 刷新頁面以更新統計數據
+            window.location.reload();
+        } else {
+            alert('❌ 清除失敗：' + result.message);
+            // 恢復按鈕狀態
+            clearButton.disabled = false;
+            clearButton.innerHTML = originalHTML;
+        }
+    } catch (error) {
+        console.error('清除資料時發生錯誤:', error);
+        alert('❌ 清除過程中發生錯誤，請稍後再試');
+        // 恢復按鈕狀態
+        const clearButton = document.querySelector('button[onclick="confirmClearAllData()"]');
+        clearButton.disabled = false;
+        clearButton.innerHTML = '<i class="fas fa-trash-alt me-2"></i>清除所有班表資料';
     }
 }
 

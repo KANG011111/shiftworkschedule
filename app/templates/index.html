@@ -20,45 +20,20 @@
         <div class="card mb-4">
             <div class="card-header py-2">
                 <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0"><i class="fas fa-users me-2"></i>群組篩選</h6>
-                    <small class="text-muted" id="groupStatus">統籌組, 燈光組, 舞台組, 視聽組, 維護組 (5/5組)</small>
+                    <h6 class="mb-0"><i class="fas fa-lightbulb me-2"></i>燈光組</h6>
+                    <small class="text-muted" id="groupStatus">燈光組 (1/1組)</small>
                 </div>
             </div>
             <div class="card-body py-3">
                 <div class="row g-2 mb-3">
-                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
-                        <button type="button" class="btn btn-outline-primary btn-sm w-100 group-btn active" data-group="coordination">
-                            <i class="fas fa-check me-1"></i>📊 統籌組
-                        </button>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
-                        <button type="button" class="btn btn-outline-warning btn-sm w-100 group-btn active" data-group="lighting">
+                    <div class="col-12">
+                        <button type="button" class="btn btn-warning btn-sm w-100 group-btn active" data-group="lighting">
                             <i class="fas fa-check me-1"></i>💡 燈光組
-                        </button>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
-                        <button type="button" class="btn btn-outline-success btn-sm w-100 group-btn active" data-group="stage">
-                            <i class="fas fa-check me-1"></i>🎭 舞台組
-                        </button>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
-                        <button type="button" class="btn btn-outline-danger btn-sm w-100 group-btn active" data-group="audio">
-                            <i class="fas fa-check me-1"></i>🔊 視聽組
-                        </button>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-12 col-xl-6">
-                        <button type="button" class="btn btn-outline-secondary btn-sm w-100 group-btn active" data-group="maintenance">
-                            <i class="fas fa-check me-1"></i>🔧 維護組
                         </button>
                     </div>
                 </div>
                 <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-primary btn-sm" id="selectAllGroups">
-                        <i class="fas fa-check-double me-1"></i>全選
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="resetGroups">
-                        <i class="fas fa-undo me-1"></i>重置
-                    </button>
+                    <small class="text-muted">僅顯示燈光組人員排班</small>
                 </div>
             </div>
         </div>
@@ -116,9 +91,6 @@
                     <a href="{{ url_for('main.query_shift') }}" class="btn btn-secondary">
                         <i class="fas fa-search me-2"></i>查詢特定日期
                     </a>
-                    <a href="{{ url_for('main.upload_new') }}" class="btn btn-success" id="uploadExcelBtn" style="display: none;">
-                        <i class="fas fa-file-csv me-2"></i>匯入 CSV 班表 v1.2
-                    </a>
                     <a href="{{ url_for('main.export_schedule') }}" class="btn btn-warning">
                         <i class="fas fa-download me-2"></i>匯出個人班表
                     </a>
@@ -128,28 +100,72 @@
         
         <div class="card mt-3">
             <div class="card-header">
-                <h5>班別說明</h5>
+                <h5>燈光組班別說明</h5>
             </div>
             <div class="card-body">
                 <div class="mb-2">
-                    <span class="badge" style="background-color: #007bff">FC班</span>
-                    <small class="text-muted ms-2">一般班</small>
+                    <span class="badge" style="background-color: #28a745">P1s</span>
+                    <small class="text-muted ms-2">裝臺Day1</small>
                 </div>
                 <div class="mb-2">
-                    <span class="badge" style="background-color: #28a745">P1班</span>
-                    <small class="text-muted ms-2">演出班早班</small>
+                    <span class="badge" style="background-color: #28a745">P1sa</span>
+                    <small class="text-muted ms-2">裝臺Day1</small>
                 </div>
                 <div class="mb-2">
-                    <span class="badge" style="background-color: #ffc107; color: #000">P2班</span>
-                    <small class="text-muted ms-2">演出班中班</small>
+                    <span class="badge" style="background-color: #20c997">P1c</span>
+                    <small class="text-muted ms-2">NT兼ET</small>
                 </div>
                 <div class="mb-2">
-                    <span class="badge" style="background-color: #fd7e14">P3班</span>
-                    <small class="text-muted ms-2">演出班晚班</small>
+                    <span class="badge" style="background-color: #20c997">P1n</span>
+                    <small class="text-muted ms-2">NT兼ET</small>
                 </div>
                 <div class="mb-2">
-                    <span class="badge" style="background-color: #dc3545">P4班</span>
-                    <small class="text-muted ms-2">演出班夜班</small>
+                    <span class="badge" style="background-color: #17a2b8">P1p</span>
+                    <small class="text-muted ms-2">裝臺彩排演出班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #ffc107; color: #000">P2s</span>
+                    <small class="text-muted ms-2">裝臺Day1</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #ffc107; color: #000">P2sa</span>
+                    <small class="text-muted ms-2">裝臺Day1</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #fd7e14">P2c</span>
+                    <small class="text-muted ms-2">ET兼NT</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #fd7e14">P2n</span>
+                    <small class="text-muted ms-2">ET兼NT</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #e83e8c">P2p</span>
+                    <small class="text-muted ms-2">裝臺彩排演出班</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #dc3545">P3c</span>
+                    <small class="text-muted ms-2">CH兼RH</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #dc3545">P3n</span>
+                    <small class="text-muted ms-2">CH</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #6f42c1">P3p</span>
+                    <small class="text-muted ms-2">裝臺彩排演出班兼顧RH早上</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #495057">P4c</span>
+                    <small class="text-muted ms-2">RH兼CH</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #495057">P4n</span>
+                    <small class="text-muted ms-2">RH</small>
+                </div>
+                <div class="mb-2">
+                    <span class="badge" style="background-color: #343a40">P4p</span>
+                    <small class="text-muted ms-2">裝臺彩排演出班兼顧CH早上</small>
                 </div>
                 <div class="mb-2">
                     <span class="badge" style="background-color: #6c757d">休假</span>
@@ -177,30 +193,14 @@ document.getElementById('quickSearch').addEventListener('keypress', function(e) 
     }
 });
 
-// 根據用戶角色顯示/隱藏功能按鈕
-function updateHomepageButtons() {
-    const uploadExcelBtn = document.getElementById('uploadExcelBtn');
-    
-    // 等待全域認證狀態載入
-    setTimeout(() => {
-        if (window.isAdmin && window.isAdmin()) {
-            uploadExcelBtn.style.display = 'inline-block';
-        } else {
-            uploadExcelBtn.style.display = 'none';
-        }
-    }, 100);
-}
+// 首頁按鈕功能已移除匯入功能
 
 // 群組多選功能
-let selectedGroups = new Set(['統籌組', '燈光組', '舞台組', '視聽組', '維護組']); // 預設全選
+let selectedGroups = new Set(['燈光組']); // 只顯示燈光組
 let employeeGroups = {}; // 儲存員工群組歸屬
 
 const groupMapping = {
-    'coordination': '統籌組',
-    'lighting': '燈光組', 
-    'stage': '舞台組',
-    'audio': '視聽組',
-    'maintenance': '維護組'
+    'lighting': '燈光組'
 };
 
 async function loadEmployeeGroups() {
@@ -231,7 +231,7 @@ function toggleGroup(groupKey) {
     
     // 確保至少選1組
     if (selectedGroups.size === 0) {
-        selectedGroups.add('統籌組');
+        selectedGroups.add('燈光組');
     }
     
     updateGroupButtons();
@@ -249,22 +249,14 @@ function updateGroupButtons() {
             btn.classList.add('active');
             btn.classList.remove('btn-outline-primary', 'btn-outline-warning', 'btn-outline-success', 'btn-outline-danger', 'btn-outline-secondary');
             // 設定對應的實心顏色
-            if (groupKey === 'coordination') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-primary';
-            else if (groupKey === 'lighting') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-warning';
-            else if (groupKey === 'stage') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-success';
-            else if (groupKey === 'audio') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-danger';
-            else if (groupKey === 'maintenance') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-secondary';
+            if (groupKey === 'lighting') btn.className = btn.className.replace(/btn-\w+-\w+/g, '') + ' btn-warning';
             
             btn.querySelector('i').className = 'fas fa-check me-1';
         } else {
             btn.classList.remove('active');
             // 恢復outline樣式
             btn.className = btn.className.replace(/btn-primary|btn-warning|btn-success|btn-danger|btn-secondary/g, '');
-            if (groupKey === 'coordination') btn.classList.add('btn-outline-primary');
-            else if (groupKey === 'lighting') btn.classList.add('btn-outline-warning');
-            else if (groupKey === 'stage') btn.classList.add('btn-outline-success');
-            else if (groupKey === 'audio') btn.classList.add('btn-outline-danger');
-            else if (groupKey === 'maintenance') btn.classList.add('btn-outline-secondary');
+            if (groupKey === 'lighting') btn.classList.add('btn-outline-warning');
             
             btn.querySelector('i').className = 'fas fa-square me-1';
         }
@@ -274,7 +266,7 @@ function updateGroupButtons() {
 function updateGroupStatus() {
     const groupNames = Array.from(selectedGroups).join(', ');
     const count = selectedGroups.size;
-    document.getElementById('groupStatus').textContent = `${groupNames} (${count}/5組)`;
+    document.getElementById('groupStatus').textContent = `${groupNames} (${count}/1組)`;
 }
 
 function applyGroupFilter() {
@@ -301,47 +293,35 @@ function applyGroupFilter() {
 }
 
 function selectAllGroups() {
-    selectedGroups = new Set(['統籌組', '燈光組', '舞台組', '視聽組', '維護組']);
+    selectedGroups = new Set(['燈光組']);
     updateGroupButtons();
     updateGroupStatus();
     applyGroupFilter();
 }
 
 function resetGroups() {
-    selectedGroups = new Set(['統籌組']); // 重置為只選統籌組
+    selectedGroups = new Set(['燈光組']); // 重置為只選燈光組
     updateGroupButtons();
     updateGroupStatus();
     applyGroupFilter();
 }
 
-// 頁面載入時檢查權限
+// 頁面載入時初始化
 document.addEventListener('DOMContentLoaded', function() {
-    updateHomepageButtons();
     
     // 初始化群組功能
     loadEmployeeGroups();
     updateGroupButtons();
     updateGroupStatus();
     
-    // 綁定群組按鈕事件
+    // 綁定群組按鈕事件 (燈光組按鈕)
     document.querySelectorAll('.group-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             toggleGroup(this.dataset.group);
         });
     });
     
-    // 綁定全選和重置按鈕
-    document.getElementById('selectAllGroups').addEventListener('click', selectAllGroups);
-    document.getElementById('resetGroups').addEventListener('click', resetGroups);
-    
-    // 監聽認證狀態變化
-    const originalUpdateNavigation = window.updateNavigation;
-    if (originalUpdateNavigation) {
-        window.updateNavigation = function(...args) {
-            originalUpdateNavigation.apply(this, args);
-            updateHomepageButtons();
-        };
-    }
+    // 認證狀態監聽已移除
 });
 </script>
 {% endblock %}
