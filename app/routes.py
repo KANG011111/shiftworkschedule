@@ -501,8 +501,10 @@ def api_preview_schedule():
         # if not schedules:
         #     return jsonify({'error': f'{employee.name} 在 {year}年{month:02d}月 沒有排班資料'}), 404
             
-        # 建立月曆結構
+        # 建立月曆結構 (使用星期日開始的傳統格式)
+        calendar.setfirstweekday(calendar.SUNDAY)
         cal = calendar.monthcalendar(year, month)
+        calendar.setfirstweekday(calendar.MONDAY)  # 恢復預設
         
         # 準備排班資料
         schedule_data = []
@@ -564,8 +566,10 @@ def api_preview_schedule_by_id():
         # 將排班資料轉換為字典格式，方便前端處理
         schedule_dict = {schedule.date.day: schedule for schedule in schedules}
         
-        # 生成月曆結構
+        # 生成月曆結構 (使用星期日開始的傳統格式)
+        calendar.setfirstweekday(calendar.SUNDAY)
         cal = calendar.monthcalendar(year, month)
+        calendar.setfirstweekday(calendar.MONDAY)  # 恢復預設
         
         # 準備返回的排班資料
         schedule_data = []
@@ -672,9 +676,11 @@ def api_export_monthly_schedule():
         for schedule in schedules:
             schedule_dict[schedule.date.day] = schedule.shift_type.code
         
-        # 取得該月的日曆資訊
+        # 取得該月的日曆資訊 (使用星期日開始的傳統格式)
+        calendar.setfirstweekday(calendar.SUNDAY)
         cal = calendar.monthcalendar(year, month)
-        weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
+        calendar.setfirstweekday(calendar.MONDAY)  # 恢復預設
+        weekdays = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
         
         # 從第5行開始建立日曆表格
         start_row = 5

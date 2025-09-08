@@ -131,3 +131,18 @@ testcsv/
 
 # Personal data configuration
 config/whitelist.json
+
+# Sound notification scripts (development tools)
+claude_sound_notifier.sh
+simple_sound_test.sh
+
+# Instance directory (database and runtime data)
+instance/
+
+# Additional test and log files
+*.log
+*test*.log
+*TEST*.log
+flask*.log
+csv_test.log
+calendar_test.log
