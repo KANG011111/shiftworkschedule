@@ -308,6 +308,11 @@ function renderAllUsers(users) {
                                 <li><button class="dropdown-item" onclick="changeUserStatus(${user.id}, 'approved')">設為已審核</button></li>
                                 <li><button class="dropdown-item" onclick="changeUserStatus(${user.id}, 'disabled')">停用</button></li>
                                 <li><button class="dropdown-item" onclick="changeUserStatus(${user.id}, 'pending')">設為待審核</button></li>
+                                ${user.role !== 'admin' ? 
+                                    `<li><hr class="dropdown-divider"></li>
+                                     <li><button class="dropdown-item text-danger" onclick="deleteUser(${user.id}, '${user.name}', '${user.username}')"><i class="fas fa-trash"></i> 刪除用戶</button></li>` 
+                                    : ''
+                                }
                             </ul>
                         </div>
                     </div>
@@ -431,6 +436,47 @@ document.addEventListener('DOMContentLoaded', function() {
     loadPendingUsers();
     loadAllUsers();
 });
+
+// 刪除用戶
+async function deleteUser(userId, userName, userUsername) {
+    // 顯示確認對話框
+    const confirmed = confirm(`⚠️ 警告：刪除操作不可恢復\n\n確定要刪除用戶嗎？\n\n用戶資訊：\n姓名：${userName}\n帳號：${userUsername}\n\n刪除後將同時移除該用戶的所有班表記錄。`);
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    // 二次確認
+    const doubleConfirm = confirm(`最後確認：真的要刪除用戶「${userName}」嗎？`);
+    
+    if (!doubleConfirm) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/admin/user/${userId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert(data.message, 'success');
+            // 刷新用戶列表和統計
+            await loadAllUsers();
+            await loadStatistics();
+            await loadPendingUsers();
+        } else {
+            showAlert(data.message, 'danger');
+        }
+    } catch (error) {
+        console.error('刪除用戶錯誤:', error);
+        showAlert('刪除失敗，請稍後再試', 'danger');
+    }
+}
 
 // Excel 上傳功能（暫時佔位）
 function uploadExcel() {

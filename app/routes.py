@@ -1212,6 +1212,46 @@ def unlock_user(user_id):
         print(f'解鎖用戶錯誤: {e}')
         return jsonify({'success': False, 'message': '解鎖失敗'}), 500
 
+@main.route('/api/admin/user/<int:user_id>', methods=['DELETE'])
+@require_admin
+def delete_user(user_id):
+    """刪除用戶"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'success': False, 'message': '用戶不存在'}), 404
+        
+        # 檢查是否為系統管理員
+        if user.role == 'admin':
+            return jsonify({'success': False, 'message': '不能刪除管理員帳號'}), 403
+        
+        # 檢查是否為當前登入用戶
+        current_user_id = session.get('user_id')
+        if user.id == current_user_id:
+            return jsonify({'success': False, 'message': '不能刪除當前登入的帳號'}), 403
+        
+        # 備份用戶資料以便日誌記錄
+        deleted_user_name = user.name
+        deleted_user_username = user.username
+        
+        # 刪除用戶相關的班表記錄
+        from app.models import Schedule
+        Schedule.query.filter_by(employee_id=user.id).delete()
+        
+        # 刪除用戶
+        db.session.delete(user)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'用戶 {deleted_user_name} ({deleted_user_username}) 已刪除'
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        print(f'刪除用戶錯誤: {e}')
+        return jsonify({'success': False, 'message': '刪除失敗'}), 500
+
 @main.route('/admin')
 @require_admin
 def admin_page():
