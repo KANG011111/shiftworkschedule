@@ -25,9 +25,16 @@ Flask-based shift work schedule application with features for creating, managing
 - `instance/` - SQLite database directory
 
 ## Database
-- SQLite database: `instance/shift_schedule.db`
-- Models: Employee, Schedule, ShiftType, Group
+- **Local Development**: SQLite database: `instance/shift_schedule.db`
+- **Production/Zeabur**: PostgreSQL (via DATABASE_URL environment variable)
+- Models: Employee, Schedule, ShiftType, Group, User, Session, ImportLog
 - Auto-initialization with test data
+
+### Database Configuration
+- **SQLite (Local)**: Uses file-based database for development
+- **PostgreSQL (Production)**: Recommended for production deployment
+- **Memory SQLite**: Fallback when no write permissions
+- Automatic migration and schema creation on startup
 
 ## API Endpoints
 - `/api/preview_schedule` - Get schedule preview data for JPG export
@@ -68,9 +75,23 @@ Flask-based shift work schedule application with features for creating, managing
 5. Verify September 1st appears in Monday column
 6. Download JPG and confirm calendar alignment
 
+## Zeabur PostgreSQL Setup
+1. **Requirements**: Add `psycopg2-binary==2.9.9` to `requirements.txt` ✅
+2. **Environment**: Zeabur automatically provides `DATABASE_URL` for PostgreSQL service
+3. **Configuration**: Set `DATABASE_URL` environment variable in Zeabur dashboard
+4. **Format**: `postgresql://username:password@hostname:5432/database_name`
+5. **Migration**: App automatically creates tables and test data on first startup
+
+### Zeabur Deployment Steps
+1. Create PostgreSQL service in Zeabur dashboard
+2. Connect your app to the PostgreSQL service
+3. Zeabur will automatically set `DATABASE_URL` environment variable
+4. Deploy your app - database tables will be created automatically
+
 ## Notes
 - Follow existing Flask patterns and conventions
 - Ensure proper error handling in all routes
 - All calendar operations use Sunday-first format for consistency
 - Test data automatically loads on application startup
 - Docker container includes all dependencies and configurations
+- PostgreSQL recommended for production to persist data across deployments
