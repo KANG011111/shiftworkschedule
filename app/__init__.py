@@ -216,12 +216,12 @@ def create_app():
             db.session.commit()
             print(f'✅ 初始化 {len(employee_data)} 個測試員工 (新建 {created_count} 個)')
             
-            # 清除現有排班資料避免重複
+            # 不再自動清除現有排班資料，保持數據持久性
             existing_schedules = Schedule.query.count()
             if existing_schedules > 0:
-                print(f'🗑️ 清除現有 {existing_schedules} 筆排班資料')
-                Schedule.query.delete()
-                db.session.commit()
+                print(f'📊 發現現有 {existing_schedules} 筆排班資料 (保持不變)')
+            else:
+                print('📭 尚無排班資料，等待用戶匯入')
                 
             # 註釋掉自動建立測試排班資料，讓用戶可以進行乾淨測試
             # print('🔄 跳過自動建立測試排班資料，等待用戶匯入')
